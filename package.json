@@ -1,0 +1,54 @@
+{
+  "name": "expo-bug-report",
+  "version": "0.1.0",
+  "description": "Lightweight in-app bug reporting for React Native & Expo. Shake to report. Screenshot annotation. Pluggable integrations.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "bug-report",
+    "shake",
+    "screenshot",
+    "instabug",
+    "feedback",
+    "annotation"
+  ],
+  "author": "Sambulo Senda",
+  "license": "MIT",
+  "peerDependencies": {
+    "expo-constants": ">=16.0.0",
+    "expo-device": ">=6.0.0",
+    "expo-sensors": ">=13.0.0",
+    "react": ">=18.0.0",
+    "react-native": ">=0.72.0",
+    "react-native-gesture-handler": ">=2.12.0",
+    "react-native-svg": ">=13.0.0",
+    "react-native-view-shot": ">=3.8.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-native": "^0.72.0",
+    "expo-constants": "^17.0.0",
+    "expo-device": "^7.0.0",
+    "expo-sensors": "^14.0.0",
+    "react": "^18.2.0",
+    "react-native": "^0.76.0",
+    "react-native-gesture-handler": "^2.20.0",
+    "react-native-svg": "^15.0.0",
+    "react-native-view-shot": "^4.0.0",
+    "typescript": "^5.3.0"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sambulosenda/expo-bug-report"
+  }
+}
