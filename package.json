@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "test": "jest",
     "prepublishOnly": "tsc"
   },
   "keywords": [
@@ -34,19 +35,26 @@
     "react-native-view-shot": ">=3.8.0"
   },
   "devDependencies": {
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^30.0.0",
     "@types/react": "^18.2.0",
     "@types/react-native": "^0.72.0",
+    "@types/react-test-renderer": "^19.1.0",
     "expo-clipboard": "^55.0.10-canary-20260328-bdc6273",
     "expo-constants": "^17.0.0",
     "expo-device": "^7.0.0",
     "expo-file-system": "^55.0.13-canary-20260328-bdc6273",
     "expo-localization": "^55.0.10-canary-20260328-bdc6273",
     "expo-sensors": "^14.0.0",
+    "jest": "^30.3.0",
     "react": "^18.2.0",
     "react-native": "^0.76.0",
     "react-native-gesture-handler": "^2.20.0",
     "react-native-svg": "^15.0.0",
     "react-native-view-shot": "^4.0.0",
+    "react-test-renderer": "^18.3.1",
+    "ts-jest": "^29.4.6",
     "typescript": "^5.3.0"
   },
   "files": [

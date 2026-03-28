@@ -1,0 +1,10 @@
+export const Platform = { OS: 'ios', Version: '17.0', select: (obj: any) => obj.ios };
+export const Dimensions = { get: () => ({ width: 390, height: 844 }) };
+export const View = 'View';
+export const Text = 'Text';
+export const Modal = 'Modal';
+export const TextInput = 'TextInput';
+export const TouchableOpacity = 'TouchableOpacity';
+export const Image = 'Image';
+export const ActivityIndicator = 'ActivityIndicator';
+export const KeyboardAvoidingView = 'KeyboardAvoidingView';
