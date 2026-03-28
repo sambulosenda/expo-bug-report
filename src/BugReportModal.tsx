@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  Clipboard,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { AnnotationCanvas } from './AnnotationCanvas';
 import { collectDeviceInfo } from './DeviceInfo';
 import type { Integration, BugReport } from './integrations/types';
@@ -20,9 +20,10 @@ interface BugReportModalProps {
   visible: boolean;
   screenshotUri: string | null;
   integrations: Integration[];
-  metadata: Record<string, string>;
-  screenName: string;
+  metadata: Record<string, string> | (() => Record<string, string>);
+  screenNameProvider: () => string;
   onClose: () => void;
+  onError?: (error: Error, report: BugReport) => void;
 }
 
 type ModalStep = 'annotate' | 'describe' | 'success' | 'error';
@@ -34,8 +35,9 @@ export function BugReportModal({
   screenshotUri,
   integrations,
   metadata,
-  screenName,
+  screenNameProvider,
   onClose,
+  onError,
 }: BugReportModalProps) {
   const [step, setStep] = useState<ModalStep>(
     screenshotUri ? 'annotate' : 'describe',
@@ -49,6 +51,17 @@ export function BugReportModal({
   const { width: screenWidth } = Dimensions.get('window');
   const canvasHeight = screenWidth * 1.5;
 
+  // Reset step when modal opens/closes or screenshot changes
+  useEffect(() => {
+    if (visible) {
+      setStep(screenshotUri ? 'annotate' : 'describe');
+      setAnnotatedUri(null);
+      setDescription('');
+      setErrorMessage('');
+      setRetryCount(0);
+    }
+  }, [visible, screenshotUri]);
+
   const handleAnnotationComplete = useCallback((uri: string) => {
     setAnnotatedUri(uri);
     setStep('describe');
@@ -59,6 +72,10 @@ export function BugReportModal({
   }, []);
 
   const buildReport = useCallback((): BugReport => {
+    const resolvedMetadata =
+      typeof metadata === 'function' ? metadata() : metadata;
+    const screenName = screenNameProvider();
+
     return {
       screenshot: screenshotUri,
       annotatedScreenshot: annotatedUri,
@@ -66,9 +83,9 @@ export function BugReportModal({
       device: collectDeviceInfo(),
       screen: screenName,
       timestamp: new Date().toISOString(),
-      metadata,
+      metadata: resolvedMetadata,
     };
-  }, [screenshotUri, annotatedUri, description, screenName, metadata]);
+  }, [screenshotUri, annotatedUri, description, metadata, screenNameProvider]);
 
   const handleSubmit = useCallback(async () => {
     if (isSubmitting) return;
@@ -92,21 +109,58 @@ export function BugReportModal({
         failures[0]?.status === 'fulfilled'
           ? failures[0].value.error
           : 'Send failed';
-      setErrorMessage(firstError ?? 'Send failed');
+      const errorMsg = firstError ?? 'Send failed';
+      setErrorMessage(errorMsg);
       setStep('error');
+      onError?.(new Error(errorMsg), report);
     }
 
     setIsSubmitting(false);
-  }, [isSubmitting, buildReport, integrations]);
+  }, [isSubmitting, buildReport, integrations, onError]);
 
-  const handleRetry = useCallback(() => {
+  const handleRetry = useCallback(async () => {
     if (retryCount >= MAX_RETRIES) return;
     setRetryCount((prev) => prev + 1);
-    setStep('describe');
-    handleSubmit();
-  }, [retryCount, handleSubmit]);
+    // Call submit directly without resetting step to avoid race condition
+    setIsSubmitting(true);
+    setErrorMessage('');
 
-  const handleCopyToClipboard = useCallback(() => {
+    const report = buildReport();
+
+    const results = await Promise.allSettled(
+      integrations.map((integration) => integration.send(report)),
+    );
+
+    const failures = results.filter(
+      (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success),
+    );
+
+    if (failures.length === 0) {
+      setStep('success');
+    } else {
+      const firstError =
+        failures[0]?.status === 'fulfilled'
+          ? failures[0].value.error
+          : 'Send failed';
+      const errorMsg = firstError ?? 'Send failed';
+      setErrorMessage(errorMsg);
+      onError?.(new Error(errorMsg), report);
+    }
+
+    setIsSubmitting(false);
+  }, [retryCount, buildReport, integrations, onError]);
+
+  // handleClose defined before handleCopyToClipboard to avoid reference issue
+  const handleClose = useCallback(() => {
+    setStep(screenshotUri ? 'annotate' : 'describe');
+    setAnnotatedUri(null);
+    setDescription('');
+    setErrorMessage('');
+    setRetryCount(0);
+    onClose();
+  }, [onClose, screenshotUri]);
+
+  const handleCopyToClipboard = useCallback(async () => {
     const report = buildReport();
     const text = [
       `Bug Report - ${report.screen}`,
@@ -119,18 +173,9 @@ export function BugReportModal({
       .filter(Boolean)
       .join('\n');
 
-    Clipboard.setString(text);
+    await Clipboard.setStringAsync(text);
     handleClose();
-  }, [buildReport]);
-
-  const handleClose = useCallback(() => {
-    setStep(screenshotUri ? 'annotate' : 'describe');
-    setAnnotatedUri(null);
-    setDescription('');
-    setErrorMessage('');
-    setRetryCount(0);
-    onClose();
-  }, [onClose, screenshotUri]);
+  }, [buildReport, handleClose]);
 
   return (
     <Modal
@@ -178,6 +223,22 @@ export function BugReportModal({
           />
         ) : step === 'describe' ? (
           <View style={{ flex: 1, padding: 20 }}>
+            {/* Expo Go info banner */}
+            {!screenshotUri && !annotatedUri ? (
+              <View
+                style={{
+                  backgroundColor: '#F2F2F7',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <Text style={{ fontSize: 13, color: '#8E8E93', textAlign: 'center' }}>
+                  Screenshot unavailable in Expo Go — description and device info still collected
+                </Text>
+              </View>
+            ) : null}
+
             {/* Screenshot preview */}
             {(annotatedUri ?? screenshotUri) ? (
               <View style={{ alignItems: 'center', marginBottom: 16 }}>
@@ -197,7 +258,7 @@ export function BugReportModal({
             ) : null}
 
             <Text style={{ fontSize: 13, color: '#8E8E93', marginBottom: 12 }}>
-              Screen: {screenName}
+              Screen: {screenNameProvider()}
             </Text>
 
             <TextInput

@@ -10,7 +10,7 @@ import { View } from 'react-native';
 import { useShakeDetector } from './ShakeDetector';
 import { captureScreenshot } from './ScreenCapture';
 import { BugReportModal } from './BugReportModal';
-import type { Integration } from './integrations/types';
+import type { Integration, BugReport } from './integrations/types';
 
 const DEBOUNCE_MS = 3000;
 
@@ -30,27 +30,26 @@ interface BugReportProviderProps {
   shakeEnabled?: boolean;
   screenNameProvider?: () => string;
   enabled?: boolean;
+  onError?: (error: Error, report: BugReport) => void;
 }
+
+const defaultScreenNameProvider = () => 'unknown';
 
 export function BugReportProvider({
   children,
   integrations,
-  metadata,
+  metadata = {},
   shakeThreshold,
   shakeEnabled = true,
-  screenNameProvider,
+  screenNameProvider = defaultScreenNameProvider,
   enabled = true,
+  onError,
 }: BugReportProviderProps) {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
   const isModalVisibleRef = useRef(false);
   const lastTriggerTimestamp = useRef(0);
   const viewShotRef = useRef<View>(null);
-
-  const resolvedMetadata =
-    typeof metadata === 'function' ? metadata() : metadata ?? {};
-
-  const screenName = screenNameProvider?.() ?? 'unknown';
 
   const triggerBugReport = useCallback(async () => {
     const now = Date.now();
@@ -92,9 +91,10 @@ export function BugReportProvider({
         visible={isModalVisible}
         screenshotUri={screenshotUri}
         integrations={integrations}
-        metadata={resolvedMetadata}
-        screenName={screenName}
+        metadata={metadata}
+        screenNameProvider={screenNameProvider}
         onClose={handleClose}
+        onError={onError}
       />
     </BugReportContext.Provider>
   );

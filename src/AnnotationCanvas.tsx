@@ -29,19 +29,26 @@ export function AnnotationCanvas({
 }: AnnotationCanvasProps) {
   const [paths, setPaths] = useState<PathData[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
+  const currentPathRef = useRef<string>('');
   const compositeRef = useRef<View>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const panGesture = Gesture.Pan()
     .onStart((event) => {
-      setCurrentPath(`M${event.x},${event.y}`);
+      const newPath = `M${event.x},${event.y}`;
+      currentPathRef.current = newPath;
+      setCurrentPath(newPath);
     })
     .onUpdate((event) => {
-      setCurrentPath((prev) => `${prev} L${event.x},${event.y}`);
+      const updated = `${currentPathRef.current} L${event.x},${event.y}`;
+      currentPathRef.current = updated;
+      setCurrentPath(updated);
     })
     .onEnd(() => {
-      if (currentPath) {
-        setPaths((prev) => [...prev, { d: currentPath }]);
+      const pathToSave = currentPathRef.current;
+      if (pathToSave) {
+        setPaths((prev) => [...prev, { d: pathToSave }]);
+        currentPathRef.current = '';
         setCurrentPath('');
       }
     })

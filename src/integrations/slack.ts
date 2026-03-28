@@ -88,6 +88,13 @@ export function SlackIntegration(config: SlackConfig): Integration {
         let screenshotUrl: string | null = null;
 
         const imageUri = report.annotatedScreenshot ?? report.screenshot;
+        if (imageUri && !config.imageUploadKey) {
+          console.warn(
+            '[expo-bug-report] Screenshot available but no imageUploadKey configured. ' +
+            'Bug report will be sent without the screenshot image. ' +
+            'Add imageUploadKey to SlackIntegration config to include screenshots.',
+          );
+        }
         if (imageUri && config.imageUploadKey) {
           screenshotUrl = await uploadImage(
             imageUri,
