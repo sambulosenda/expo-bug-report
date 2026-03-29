@@ -10,14 +10,33 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  type ColorSchemeName,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { AnnotationCanvas } from './AnnotationCanvas';
 import { collectDeviceInfo } from './DeviceInfo';
 import { getStateSnapshot } from './StateCapture';
 import { getNavHistory } from './NavigationTracker';
 import { getLastError } from './ErrorBoundary';
+import { useThemeColors } from './useThemeColors';
 import type { Integration, BugReport } from './integrations/types';
+
+// Optional dep: expo-clipboard (only used for copy-to-clipboard fallback)
+let Clipboard: { setStringAsync: (text: string) => Promise<void> } | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  Clipboard = require('expo-clipboard');
+} catch {
+  // expo-clipboard not installed — copy to clipboard disabled
+}
+
+// Optional dep: @react-native-community/netinfo
+let NetInfo: { fetch: () => Promise<{ isConnected: boolean | null }> } | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  NetInfo = require('@react-native-community/netinfo').default;
+} catch {
+  // netinfo not installed — offline detection disabled
+}
 
 interface BugReportModalProps {
   visible: boolean;
@@ -25,6 +44,7 @@ interface BugReportModalProps {
   integrations: Integration[];
   metadata: Record<string, string> | (() => Record<string, string>);
   screenNameProvider: () => string;
+  colorScheme?: ColorSchemeName;
   onClose: () => void;
   onSubmitSuccess?: () => void;
   onError?: (error: Error, report: BugReport) => void;
@@ -34,16 +54,41 @@ type ModalStep = 'annotate' | 'describe' | 'success' | 'error';
 
 const MAX_RETRIES = 3;
 
+function DiagnosticsSummary({ colorScheme }: { colorScheme?: ColorSchemeName }) {
+  const colors = useThemeColors(colorScheme);
+  const stateSnapshots = getStateSnapshot();
+  const navHistory = getNavHistory();
+  const lastError = getLastError();
+
+  const parts: string[] = [];
+  if (stateSnapshots.length > 0) parts.push(`${stateSnapshots.length} state snapshot${stateSnapshots.length === 1 ? '' : 's'}`);
+  if (navHistory.length > 0) parts.push(`${navHistory.length} nav event${navHistory.length === 1 ? '' : 's'}`);
+  if (lastError) parts.push('1 error');
+
+  if (parts.length === 0) return null;
+
+  return (
+    <View style={{ backgroundColor: colors.surface, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+      <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>
+        Including: {parts.join(', ')}, device info
+        {'\n'}Just describe what you saw.
+      </Text>
+    </View>
+  );
+}
+
 export function BugReportModal({
   visible,
   screenshotUri,
   integrations,
   metadata,
   screenNameProvider,
+  colorScheme,
   onClose,
   onSubmitSuccess,
   onError,
 }: BugReportModalProps) {
+  const colors = useThemeColors(colorScheme);
   const [step, setStep] = useState<ModalStep>(
     screenshotUri ? 'annotate' : 'describe',
   );
@@ -52,11 +97,11 @@ export function BugReportModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
+  const [offlineWarning, setOfflineWarning] = useState(false);
 
   const { width: screenWidth } = Dimensions.get('window');
   const canvasHeight = screenWidth * 1.5;
 
-  // Reset step when modal opens/closes or screenshot changes
   useEffect(() => {
     if (visible) {
       setStep(screenshotUri ? 'annotate' : 'describe');
@@ -64,8 +109,22 @@ export function BugReportModal({
       setDescription('');
       setErrorMessage('');
       setRetryCount(0);
+      setOfflineWarning(false);
     }
   }, [visible, screenshotUri]);
+
+  // Check connectivity when modal opens on describe step
+  useEffect(() => {
+    if (visible && step === 'describe' && NetInfo) {
+      NetInfo.fetch().then((state) => {
+        if (state.isConnected === false) {
+          setOfflineWarning(true);
+        }
+      }).catch(() => {
+        // NetInfo fetch failed — skip check
+      });
+    }
+  }, [visible, step]);
 
   const handleAnnotationComplete = useCallback((uri: string) => {
     setAnnotatedUri(uri);
@@ -128,10 +187,16 @@ export function BugReportModal({
     setIsSubmitting(true);
     setErrorMessage('');
 
-    const success = await sendReport();
-    setStep(success ? 'success' : 'error');
-
-    setIsSubmitting(false);
+    try {
+      const success = await sendReport();
+      setStep(success ? 'success' : 'error');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unexpected error building report';
+      setErrorMessage(msg);
+      setStep('error');
+    } finally {
+      setIsSubmitting(false);
+    }
   }, [isSubmitting, sendReport]);
 
   const handleRetry = useCallback(async () => {
@@ -140,25 +205,34 @@ export function BugReportModal({
     setIsSubmitting(true);
     setErrorMessage('');
 
-    const success = await sendReport();
-    if (success) {
-      setStep('success');
+    try {
+      const success = await sendReport();
+      if (success) {
+        setStep('success');
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unexpected error';
+      setErrorMessage(msg);
+    } finally {
+      setIsSubmitting(false);
     }
+  }, [retryCount, sendReport, isSubmitting]);
 
-    setIsSubmitting(false);
-  }, [retryCount, sendReport]);
-
-  // handleClose defined before handleCopyToClipboard to avoid reference issue
   const handleClose = useCallback(() => {
     setStep(screenshotUri ? 'annotate' : 'describe');
     setAnnotatedUri(null);
     setDescription('');
     setErrorMessage('');
     setRetryCount(0);
+    setOfflineWarning(false);
     onClose();
   }, [onClose, screenshotUri]);
 
   const handleCopyToClipboard = useCallback(async () => {
+    if (!Clipboard) {
+      handleClose();
+      return;
+    }
     const report = buildReport();
     const text = [
       `Bug Report - ${report.screen}`,
@@ -184,7 +258,7 @@ export function BugReportModal({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1, backgroundColor: '#fff' }}
+        style={{ flex: 1, backgroundColor: colors.background }}
       >
         {/* Header */}
         <View
@@ -195,10 +269,10 @@ export function BugReportModal({
             paddingHorizontal: 20,
             paddingVertical: 16,
             borderBottomWidth: 1,
-            borderBottomColor: '#E5E5EA',
+            borderBottomColor: colors.border,
           }}
         >
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#000' }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
             Bug Report
           </Text>
           <TouchableOpacity
@@ -207,7 +281,7 @@ export function BugReportModal({
             accessibilityRole="button"
             accessibilityLabel="Close bug report"
           >
-            <Text style={{ fontSize: 16, color: '#8E8E93' }}>Close</Text>
+            <Text style={{ fontSize: 16, color: colors.textSecondary }}>Close</Text>
           </TouchableOpacity>
         </View>
 
@@ -218,20 +292,37 @@ export function BugReportModal({
             onSkip={handleSkipAnnotation}
             width={screenWidth}
             height={canvasHeight}
+            colorScheme={colorScheme}
           />
         ) : step === 'describe' ? (
           <View style={{ flex: 1, padding: 20 }}>
+            {/* Offline warning */}
+            {offlineWarning ? (
+              <View
+                style={{
+                  backgroundColor: colors.error + '18',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
+                }}
+              >
+                <Text style={{ fontSize: 13, color: colors.error, textAlign: 'center' }}>
+                  You appear to be offline. Your report may not be delivered.
+                </Text>
+              </View>
+            ) : null}
+
             {/* Expo Go info banner */}
             {!screenshotUri && !annotatedUri ? (
               <View
                 style={{
-                  backgroundColor: '#F2F2F7',
+                  backgroundColor: colors.surface,
                   borderRadius: 8,
                   padding: 12,
                   marginBottom: 16,
                 }}
               >
-                <Text style={{ fontSize: 13, color: '#8E8E93', textAlign: 'center' }}>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
                   Screenshot unavailable in Expo Go — description and device info still collected
                 </Text>
               </View>
@@ -247,7 +338,7 @@ export function BugReportModal({
                     height: 180,
                     borderRadius: 8,
                     borderWidth: 1,
-                    borderColor: '#E5E5EA',
+                    borderColor: colors.border,
                   }}
                   resizeMode="cover"
                   accessibilityLabel="Screenshot preview"
@@ -255,7 +346,10 @@ export function BugReportModal({
               </View>
             ) : null}
 
-            <Text style={{ fontSize: 13, color: '#8E8E93', marginBottom: 12 }}>
+            {/* Diagnostics summary */}
+            <DiagnosticsSummary colorScheme={colorScheme} />
+
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
               Screen: {screenNameProvider()}
             </Text>
 
@@ -263,18 +357,18 @@ export function BugReportModal({
               value={description}
               onChangeText={setDescription}
               placeholder="What went wrong?"
-              placeholderTextColor="#C7C7CC"
+              placeholderTextColor={colors.textTertiary}
               multiline
               numberOfLines={5}
               textAlignVertical="top"
               style={{
                 borderWidth: 1,
-                borderColor: '#E5E5EA',
+                borderColor: colors.inputBorder,
                 borderRadius: 12,
                 padding: 16,
                 fontSize: 16,
-                color: '#000',
-                backgroundColor: '#F2F2F7',
+                color: colors.text,
+                backgroundColor: colors.inputBackground,
                 minHeight: 120,
                 marginBottom: 16,
               }}
@@ -286,7 +380,7 @@ export function BugReportModal({
               onPress={handleSubmit}
               disabled={isSubmitting}
               style={{
-                backgroundColor: isSubmitting ? '#C7C7CC' : '#007AFF',
+                backgroundColor: isSubmitting ? colors.disabled : colors.primary,
                 borderRadius: 12,
                 paddingVertical: 16,
                 alignItems: 'center',
@@ -318,7 +412,7 @@ export function BugReportModal({
               style={{
                 fontSize: 22,
                 fontWeight: '700',
-                color: '#000',
+                color: colors.text,
                 marginBottom: 8,
               }}
             >
@@ -327,7 +421,7 @@ export function BugReportModal({
             <Text
               style={{
                 fontSize: 16,
-                color: '#8E8E93',
+                color: colors.textSecondary,
                 textAlign: 'center',
               }}
             >
@@ -336,7 +430,7 @@ export function BugReportModal({
             <TouchableOpacity
               onPress={handleClose}
               style={{
-                backgroundColor: '#007AFF',
+                backgroundColor: colors.primary,
                 borderRadius: 12,
                 paddingVertical: 16,
                 paddingHorizontal: 40,
@@ -365,7 +459,7 @@ export function BugReportModal({
               style={{
                 fontSize: 18,
                 fontWeight: '600',
-                color: '#FF3B30',
+                color: colors.error,
                 marginBottom: 8,
               }}
             >
@@ -374,7 +468,7 @@ export function BugReportModal({
             <Text
               style={{
                 fontSize: 14,
-                color: '#8E8E93',
+                color: colors.textSecondary,
                 textAlign: 'center',
                 marginBottom: 24,
               }}
@@ -385,8 +479,9 @@ export function BugReportModal({
             {retryCount < MAX_RETRIES ? (
               <TouchableOpacity
                 onPress={handleRetry}
+                disabled={isSubmitting}
                 style={{
-                  backgroundColor: '#007AFF',
+                  backgroundColor: colors.primary,
                   borderRadius: 12,
                   paddingVertical: 16,
                   paddingHorizontal: 40,
@@ -395,32 +490,38 @@ export function BugReportModal({
                 accessibilityRole="button"
                 accessibilityLabel="Retry sending"
               >
-                <Text
-                  style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}
-                >
-                  Retry
-                </Text>
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text
+                    style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}
+                  >
+                    Retry
+                  </Text>
+                )}
               </TouchableOpacity>
             ) : null}
 
-            <TouchableOpacity
-              onPress={handleCopyToClipboard}
-              style={{
-                borderWidth: 1,
-                borderColor: '#007AFF',
-                borderRadius: 12,
-                paddingVertical: 16,
-                paddingHorizontal: 40,
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Copy report to clipboard"
-            >
-              <Text
-                style={{ fontSize: 16, fontWeight: '600', color: '#007AFF' }}
+            {Clipboard ? (
+              <TouchableOpacity
+                onPress={handleCopyToClipboard}
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.primary,
+                  borderRadius: 12,
+                  paddingVertical: 16,
+                  paddingHorizontal: 40,
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Copy report to clipboard"
               >
-                Copy to Clipboard
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={{ fontSize: 16, fontWeight: '600', color: colors.primary }}
+                >
+                  Copy to Clipboard
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : null}
       </KeyboardAvoidingView>

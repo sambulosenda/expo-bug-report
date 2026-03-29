@@ -6,12 +6,12 @@ import React, {
   useRef,
   type ReactNode,
 } from 'react';
-import { View } from 'react-native';
+import { View, type ColorSchemeName } from 'react-native';
 import { useShakeDetector } from './ShakeDetector';
 import { captureScreenshot } from './ScreenCapture';
 import { BugReportModal } from './BugReportModal';
 import { freezeStateSnapshot, clearStateCapture } from './StateCapture';
-import { freezeNavHistory, clearNavHistory } from './NavigationTracker';
+import { freezeNavHistory, clearNavHistory, getCurrentPathname } from './NavigationTracker';
 import { clearLastError } from './ErrorBoundary';
 import type { Integration, BugReport } from './integrations/types';
 
@@ -32,11 +32,10 @@ interface BugReportProviderProps {
   shakeThreshold?: number;
   shakeEnabled?: boolean;
   screenNameProvider?: () => string;
+  colorScheme?: ColorSchemeName;
   enabled?: boolean;
   onError?: (error: Error, report: BugReport) => void;
 }
-
-const defaultScreenNameProvider = () => 'unknown';
 
 export function BugReportProvider({
   children,
@@ -44,7 +43,8 @@ export function BugReportProvider({
   metadata = {},
   shakeThreshold,
   shakeEnabled = true,
-  screenNameProvider = defaultScreenNameProvider,
+  screenNameProvider,
+  colorScheme,
   enabled = true,
   onError,
 }: BugReportProviderProps) {
@@ -53,6 +53,13 @@ export function BugReportProvider({
   const isModalVisibleRef = useRef(false);
   const lastTriggerTimestamp = useRef(0);
   const viewShotRef = useRef<View>(null);
+
+  // Auto-detect screen name from NavigationTracker if no provider given
+  const resolvedScreenNameProvider = useCallback(() => {
+    if (screenNameProvider) return screenNameProvider();
+    const trackedPathname = getCurrentPathname();
+    return trackedPathname ?? 'unknown';
+  }, [screenNameProvider]);
 
   const triggerBugReport = useCallback(async () => {
     const now = Date.now();
@@ -105,7 +112,8 @@ export function BugReportProvider({
         screenshotUri={screenshotUri}
         integrations={integrations}
         metadata={metadata}
-        screenNameProvider={screenNameProvider}
+        screenNameProvider={resolvedScreenNameProvider}
+        colorScheme={colorScheme}
         onClose={handleClose}
         onSubmitSuccess={handleSubmitSuccess}
         onError={onError}

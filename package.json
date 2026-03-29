@@ -22,7 +22,6 @@
   "author": "Sambulo Senda",
   "license": "MIT",
   "peerDependencies": {
-    "expo-clipboard": ">=5.0.0",
     "expo-constants": ">=16.0.0",
     "expo-device": ">=6.0.0",
     "expo-file-system": ">=16.0.0",
@@ -36,6 +35,15 @@
   },
   "peerDependenciesMeta": {
     "expo-router": {
+      "optional": true
+    },
+    "expo-clipboard": {
+      "optional": true
+    },
+    "expo-haptics": {
+      "optional": true
+    },
+    "@react-native-community/netinfo": {
       "optional": true
     }
   },

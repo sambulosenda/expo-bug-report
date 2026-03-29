@@ -4,6 +4,17 @@ import { getLocales } from 'expo-localization';
 import Constants from 'expo-constants';
 import type { DeviceInfo } from './integrations/types';
 
+function getInstallationId(): string {
+  // Constants.installationId is deprecated in newer Expo SDKs
+  // Fall back gracefully through available identifiers
+  try {
+    if (Constants.installationId) return Constants.installationId;
+  } catch {
+    // property may not exist
+  }
+  return Constants.sessionId ?? 'unknown';
+}
+
 export function collectDeviceInfo(): DeviceInfo {
   const { width, height } = Dimensions.get('window');
   const locales = getLocales();
@@ -22,7 +33,7 @@ export function collectDeviceInfo(): DeviceInfo {
       'unknown',
     screenSize: `${width}x${height}`,
     locale,
-    installationId: Constants.installationId ?? 'unknown',
+    installationId: getInstallationId(),
     expoConfig,
   };
 }

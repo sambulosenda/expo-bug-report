@@ -8,6 +8,7 @@ interface SlackConfig {
 }
 
 const DEFAULT_IMGBB_URL = 'https://api.imgbb.com/1/upload';
+const MAX_BLOCK_TEXT = 3000; // Slack Block Kit limit
 
 async function uploadImage(
   uri: string,
@@ -40,37 +41,52 @@ function truncateString(str: string, maxLen: number): string {
   return str.slice(0, maxLen) + '...';
 }
 
-function formatDiagnosticsForSlack(report: BugReport): string {
+function formatTimeline(report: BugReport): string {
+  if (!report.diagnostics) return '';
+
+  const { stateSnapshots, navHistory, lastError } = report.diagnostics;
   const lines: string[] = [];
 
-  if (report.diagnostics) {
-    const { stateSnapshots, navHistory, lastError } = report.diagnostics;
+  // Build a chronological narrative
+  if (navHistory.length > 0) {
+    const route = navHistory.map((e) => e.pathname).join(' → ');
+    lines.push(`*Navigation:* ${truncateString(route, 500)}`);
+  }
 
-    if (lastError) {
-      lines.push(`*Last Error:* ${lastError.message}`);
-      if (lastError.stack) {
-        lines.push(`\`${truncateString(lastError.stack.split('\n')[0] ?? '', 200)}\``);
+  if (lastError) {
+    lines.push('');
+    lines.push(`*Error:* \`${truncateString(lastError.message, 200)}\``);
+    if (lastError.stack) {
+      const firstLine = lastError.stack.split('\n')[0] ?? '';
+      if (firstLine !== lastError.message) {
+        lines.push(`\`${truncateString(firstLine, 200)}\``);
       }
     }
-
-    if (navHistory.length > 0) {
-      const recentRoutes = navHistory.slice(-5);
-      lines.push(`*Nav History (last ${recentRoutes.length}):*`);
-      for (const entry of recentRoutes) {
-        lines.push(`  ${entry.pathname}`);
-      }
-    }
-
-    if (stateSnapshots.length > 0) {
-      const recentStates = stateSnapshots.slice(-3);
-      lines.push(`*State Snapshots (last ${recentStates.length}):*`);
-      for (const snap of recentStates) {
-        lines.push(`  _${snap.name}:_ ${truncateString(snap.state, 200)}${snap.truncated ? ' [TRUNCATED]' : ''}`);
-      }
+    if (lastError.componentStack) {
+      const component = lastError.componentStack.trim().split('\n')[0] ?? '';
+      lines.push(`_Component:_ ${truncateString(component, 200)}`);
     }
   }
 
-  return lines.join('\n');
+  if (stateSnapshots.length > 0) {
+    lines.push('');
+    lines.push(`*App State* (${stateSnapshots.length} snapshot${stateSnapshots.length === 1 ? '' : 's'}):`);
+    // Show most recent snapshots, grouped by store name
+    const byStore = new Map<string, typeof stateSnapshots>();
+    for (const snap of stateSnapshots) {
+      const existing = byStore.get(snap.name) ?? [];
+      existing.push(snap);
+      byStore.set(snap.name, existing);
+    }
+    for (const [name, snaps] of byStore) {
+      const latest = snaps[snaps.length - 1]!;
+      const statePreview = truncateString(latest.state, 150);
+      lines.push(`  _${name}:_ \`${statePreview}\`${latest.truncated ? ' [TRUNCATED]' : ''}`);
+    }
+  }
+
+  const result = lines.join('\n');
+  return truncateString(result, MAX_BLOCK_TEXT);
 }
 
 function formatSlackMessage(
@@ -107,11 +123,11 @@ function formatSlackMessage(
     },
   ];
 
-  const diagnosticsText = formatDiagnosticsForSlack(report);
-  if (diagnosticsText) {
+  const timeline = formatTimeline(report);
+  if (timeline) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: diagnosticsText },
+      text: { type: 'mrkdwn', text: timeline },
     });
   }
 
@@ -136,7 +152,7 @@ export function SlackIntegration(config: SlackConfig): Integration {
         const imageUri = report.annotatedScreenshot ?? report.screenshot;
         if (imageUri && !config.imageUploadKey) {
           console.warn(
-            '[expo-bug-report] Screenshot available but no imageUploadKey configured. ' +
+            '[BugPulse] Screenshot available but no imageUploadKey configured. ' +
             'Bug report will be sent without the screenshot image. ' +
             'Add imageUploadKey to SlackIntegration config to include screenshots.',
           );

@@ -7,6 +7,26 @@ const SHAKE_WINDOW_MS = 800;
 const COOLDOWN_MS = 3000;
 const UPDATE_INTERVAL_MS = 100;
 
+// Try to load expo-haptics (optional peer dep)
+let Haptics: { impactAsync: (style: string) => Promise<void> } | null = null;
+let ImpactFeedbackStyle: { Medium: string } | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const haptics = require('expo-haptics');
+  Haptics = haptics;
+  ImpactFeedbackStyle = haptics.ImpactFeedbackStyle;
+} catch {
+  // expo-haptics not installed — haptic feedback disabled
+}
+
+function triggerHaptic(): void {
+  if (Haptics && ImpactFeedbackStyle) {
+    Haptics.impactAsync(ImpactFeedbackStyle.Medium).catch(() => {
+      // Haptic failed silently (e.g., unsupported device)
+    });
+  }
+}
+
 export function useShakeDetector(
   onShake: () => void,
   options?: { threshold?: number; enabled?: boolean },
@@ -25,29 +45,45 @@ export function useShakeDetector(
     let shakeTimestamps: number[] = [];
     let lastShakeTime = 0;
 
-    Accelerometer.setUpdateInterval(UPDATE_INTERVAL_MS);
-
-    const subscription = Accelerometer.addListener(({ x, y, z }) => {
-      const totalForce = Math.sqrt(x * x + y * y + z * z);
-      if (totalForce < threshold) return;
-
-      const now = Date.now();
-      if (now - lastShakeTime < COOLDOWN_MS) return;
-
-      shakeTimestamps.push(now);
-      shakeTimestamps = shakeTimestamps.filter(
-        (ts) => now - ts < SHAKE_WINDOW_MS,
+    try {
+      Accelerometer.setUpdateInterval(UPDATE_INTERVAL_MS);
+    } catch {
+      console.warn(
+        '[BugPulse] Accelerometer not available on this device. Shake-to-report disabled. Use triggerBugReport() instead.',
       );
+      return;
+    }
 
-      if (shakeTimestamps.length >= SHAKE_COUNT_REQUIRED) {
-        lastShakeTime = now;
-        shakeTimestamps = [];
-        onShakeRef.current();
-      }
-    });
+    let subscription: { remove: () => void } | null = null;
+    try {
+      subscription = Accelerometer.addListener(({ x, y, z }) => {
+        const totalForce = Math.sqrt(x * x + y * y + z * z);
+        if (totalForce < threshold) return;
+
+        const now = Date.now();
+        if (now - lastShakeTime < COOLDOWN_MS) return;
+
+        shakeTimestamps.push(now);
+        shakeTimestamps = shakeTimestamps.filter(
+          (ts) => now - ts < SHAKE_WINDOW_MS,
+        );
+
+        if (shakeTimestamps.length >= SHAKE_COUNT_REQUIRED) {
+          lastShakeTime = now;
+          shakeTimestamps = [];
+          triggerHaptic();
+          onShakeRef.current();
+        }
+      });
+    } catch {
+      console.warn(
+        '[BugPulse] Failed to start accelerometer listener. Shake-to-report disabled.',
+      );
+      return;
+    }
 
     return () => {
-      subscription.remove();
+      subscription?.remove();
     };
   }, [threshold, enabled]);
 }

@@ -148,6 +148,7 @@ const MyIntegration: Integration = {
 | `shakeThreshold` | `number` | `1.8` | Accelerometer sensitivity |
 | `shakeEnabled` | `boolean` | `true` | Enable/disable shake trigger |
 | `screenNameProvider` | `() => string` | auto-detect | Current screen name |
+| `colorScheme` | `'light' \| 'dark'` | auto-detect | Override dark/light mode |
 | `enabled` | `boolean` | `true` | Enable/disable the SDK entirely |
 
 ## Programmatic Trigger
@@ -172,6 +173,46 @@ function SettingsScreen() {
 4. User annotates the screenshot (draw circles, arrows)
 5. User adds a description
 6. SDK collects device info, attaches diagnostics, and sends to your integrations
+
+## Dark Mode
+
+The bug report modal automatically adapts to the device's color scheme. To override:
+
+```tsx
+<BugReportProvider colorScheme="dark" integrations={[...]}>
+```
+
+## Optional Dependencies
+
+These add extra functionality but aren't required:
+
+| Package | What it adds |
+|---------|-------------|
+| `expo-router` | Auto navigation tracking |
+| `expo-haptics` | Haptic feedback on shake detection |
+| `expo-clipboard` | Copy-to-clipboard fallback when send fails |
+| `@react-native-community/netinfo` | Offline detection warning |
+
+Install any you want:
+
+```bash
+npx expo install expo-haptics expo-clipboard @react-native-community/netinfo
+```
+
+## Timeline Viewer
+
+Every bug report includes diagnostics as structured JSON. Open `viewer/index.html` in a browser and paste the JSON to see a visual timeline of navigation, state changes, and errors.
+
+## Security
+
+**Webhook URL and API key exposure:** Slack webhook URLs and imgbb API keys configured in the SDK live in the app's JavaScript bundle. Anyone with access to your app binary could extract them. This is a known limitation of the zero-backend architecture.
+
+Mitigations:
+- Slack webhooks are write-only (can't read channel history)
+- Rotate webhook URLs if compromised (Slack settings)
+- For production apps handling sensitive data, consider routing reports through a serverless proxy (e.g., Cloudflare Worker) that holds credentials server-side
+
+**State snapshot privacy:** State snapshots are sent as-is. Do not track stores containing passwords, auth tokens, or PII. A redaction API is planned for a future release.
 
 ## Requirements
 

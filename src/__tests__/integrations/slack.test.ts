@@ -122,7 +122,7 @@ describe('SlackIntegration', () => {
     // Should have header, main info, diagnostics, no image
     expect(blocks.length).toBeGreaterThanOrEqual(3);
     const diagnosticsBlock = blocks.find(
-      (b: any) => b.type === 'section' && b.text?.text?.includes('Last Error'),
+      (b: any) => b.type === 'section' && b.text?.text?.includes('Error'),
     );
     expect(diagnosticsBlock).toBeDefined();
     expect(diagnosticsBlock.text.text).toContain('TypeError');

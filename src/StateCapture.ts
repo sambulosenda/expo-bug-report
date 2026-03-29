@@ -15,20 +15,19 @@ const stores = new Map<string, TrackedStore>();
 let frozenSnapshot: StateSnapshot[] | null = null;
 
 function serializeState(state: unknown): { json: string; truncated: boolean } {
-  let json: string;
   try {
-    json = JSON.stringify(state);
-  } catch {
-    console.warn('[expo-bug-report] Failed to serialize state (circular reference?). Skipping snapshot.');
+    const json = JSON.stringify(state);
+
+    if (json.length > MAX_SNAPSHOT_BYTES) {
+      return { json: JSON.stringify('[STATE TOO LARGE - ' + json.length + ' bytes]'), truncated: true };
+    }
+
+    return { json, truncated: false };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'unknown error';
+    console.warn(`[BugPulse] Failed to serialize state: ${reason}. Skipping snapshot.`);
     return { json: TRUNCATED_MARKER, truncated: true };
   }
-
-  if (json.length > MAX_SNAPSHOT_BYTES) {
-    // Truncate to valid JSON by wrapping in a string marker rather than slicing mid-JSON
-    return { json: JSON.stringify('[STATE TOO LARGE - ' + json.length + ' bytes]'), truncated: true };
-  }
-
-  return { json, truncated: false };
 }
 
 export function trackStore(

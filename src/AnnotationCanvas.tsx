@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { View, Image, TouchableOpacity, Text } from 'react-native';
+import { View, Image, TouchableOpacity, Text, type ColorSchemeName } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import {
   GestureDetector,
@@ -7,6 +7,7 @@ import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import { captureRef } from 'react-native-view-shot';
+import { useThemeColors } from './useThemeColors';
 
 interface AnnotationCanvasProps {
   screenshotUri: string;
@@ -14,11 +15,15 @@ interface AnnotationCanvasProps {
   onSkip: () => void;
   width: number;
   height: number;
+  colorScheme?: ColorSchemeName;
 }
 
 interface PathData {
   d: string;
+  color: string;
 }
+
+const PEN_COLORS = ['#FF3B30', '#007AFF', '#FFCC00', '#FFFFFF'];
 
 export function AnnotationCanvas({
   screenshotUri,
@@ -26,12 +31,19 @@ export function AnnotationCanvas({
   onSkip,
   width,
   height,
+  colorScheme,
 }: AnnotationCanvasProps) {
+  const colors = useThemeColors(colorScheme);
   const [paths, setPaths] = useState<PathData[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
+  const [selectedColor, setSelectedColor] = useState(PEN_COLORS[0]!);
   const currentPathRef = useRef<string>('');
+  const selectedColorRef = useRef(selectedColor);
   const compositeRef = useRef<View>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Keep ref in sync with state for gesture handler
+  selectedColorRef.current = selectedColor;
 
   const panGesture = Gesture.Pan()
     .onStart((event) => {
@@ -47,7 +59,7 @@ export function AnnotationCanvas({
     .onEnd(() => {
       const pathToSave = currentPathRef.current;
       if (pathToSave) {
-        setPaths((prev) => [...prev, { d: pathToSave }]);
+        setPaths((prev) => [...prev, { d: pathToSave, color: selectedColorRef.current }]);
         currentPathRef.current = '';
         setCurrentPath('');
       }
@@ -106,7 +118,7 @@ export function AnnotationCanvas({
                 <Path
                   key={index}
                   d={path.d}
-                  stroke="#FF3B30"
+                  stroke={path.color}
                   strokeWidth={3}
                   fill="none"
                   strokeLinecap="round"
@@ -116,7 +128,7 @@ export function AnnotationCanvas({
               {currentPath ? (
                 <Path
                   d={currentPath}
-                  stroke="#FF3B30"
+                  stroke={selectedColor}
                   strokeWidth={3}
                   fill="none"
                   strokeLinecap="round"
@@ -127,14 +139,20 @@ export function AnnotationCanvas({
           </GestureDetector>
         </View>
 
+        {/* Toolbar */}
         <View
           style={{
             flexDirection: 'row',
             justifyContent: 'space-between',
+            alignItems: 'center',
             paddingHorizontal: 16,
             paddingVertical: 12,
+            backgroundColor: colors.background,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
           }}
         >
+          {/* Left: Undo + Clear */}
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity
               onPress={handleUndo}
@@ -145,7 +163,7 @@ export function AnnotationCanvas({
               <Text
                 style={{
                   fontSize: 16,
-                  color: paths.length === 0 ? '#ccc' : '#007AFF',
+                  color: paths.length === 0 ? colors.disabled : colors.primary,
                 }}
               >
                 Undo
@@ -160,7 +178,7 @@ export function AnnotationCanvas({
               <Text
                 style={{
                   fontSize: 16,
-                  color: paths.length === 0 ? '#ccc' : '#FF3B30',
+                  color: paths.length === 0 ? colors.disabled : colors.error,
                 }}
               >
                 Clear
@@ -168,13 +186,34 @@ export function AnnotationCanvas({
             </TouchableOpacity>
           </View>
 
+          {/* Center: Color picker */}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {PEN_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                onPress={() => setSelectedColor(color)}
+                accessibilityRole="button"
+                accessibilityLabel={`Select ${color} pen color`}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  backgroundColor: color,
+                  borderWidth: selectedColor === color ? 2 : 1,
+                  borderColor: selectedColor === color ? colors.primary : colors.border,
+                }}
+              />
+            ))}
+          </View>
+
+          {/* Right: Skip + Done */}
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity
               onPress={onSkip}
               accessibilityRole="button"
               accessibilityLabel="Skip annotation"
             >
-              <Text style={{ fontSize: 16, color: '#8E8E93' }}>Skip</Text>
+              <Text style={{ fontSize: 16, color: colors.textSecondary }}>Skip</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleDone}
@@ -186,7 +225,7 @@ export function AnnotationCanvas({
                 style={{
                   fontSize: 16,
                   fontWeight: '600',
-                  color: isSaving ? '#ccc' : '#007AFF',
+                  color: isSaving ? colors.disabled : colors.primary,
                 }}
               >
                 Done
