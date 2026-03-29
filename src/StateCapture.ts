@@ -24,7 +24,8 @@ function serializeState(state: unknown): { json: string; truncated: boolean } {
   }
 
   if (json.length > MAX_SNAPSHOT_BYTES) {
-    return { json: json.slice(0, MAX_SNAPSHOT_BYTES) + '...[TRUNCATED]', truncated: true };
+    // Truncate to valid JSON by wrapping in a string marker rather than slicing mid-JSON
+    return { json: JSON.stringify('[STATE TOO LARGE - ' + json.length + ' bytes]'), truncated: true };
   }
 
   return { json, truncated: false };

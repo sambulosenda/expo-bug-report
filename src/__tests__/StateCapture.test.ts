@@ -69,7 +69,9 @@ describe('StateCapture', () => {
     const snapshots = getStateSnapshot();
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]!.truncated).toBe(true);
-    expect(snapshots[0]!.state).toContain('[TRUNCATED]');
+    expect(snapshots[0]!.state).toContain('STATE TOO LARGE');
+    // Truncated state should still be valid JSON
+    expect(() => JSON.parse(snapshots[0]!.state)).not.toThrow();
   });
 
   it('tracks multiple named stores', () => {

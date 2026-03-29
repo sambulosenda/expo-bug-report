@@ -135,7 +135,7 @@ export function BugReportModal({
   }, [isSubmitting, sendReport]);
 
   const handleRetry = useCallback(async () => {
-    if (retryCount >= MAX_RETRIES) return;
+    if (retryCount >= MAX_RETRIES || isSubmitting) return;
     setRetryCount((prev) => prev + 1);
     setIsSubmitting(true);
     setErrorMessage('');
