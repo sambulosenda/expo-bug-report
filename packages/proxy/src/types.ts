@@ -45,7 +45,6 @@ export interface QueueMessage {
   integration: {
     id: string;
     type: IntegrationRow['type'];
-    config: Record<string, string>;
   };
   labels: string[];
   screenshotUrl: string | null;

@@ -8,6 +8,9 @@ import { createGithubIssue, addGithubComment } from './integrations/github';
 import { createJiraIssue, addJiraComment } from './integrations/jira';
 import type { Env, IncomingReport, IntegrationRow, IssueResult, QueueMessage, RoutingConditions } from './types';
 
+const VALID_INTEGRATION_TYPES = new Set(['linear', 'github', 'jira']);
+const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2MB
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -76,10 +79,20 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     return json({ error: 'upgrade_required', feature: 'proxy', plan_required: 'starter' }, 402);
   }
 
+  // Body size check
+  const contentLength = parseInt(request.headers.get('Content-Length') ?? '0', 10);
+  if (contentLength > MAX_BODY_BYTES) {
+    return json({ error: 'payload_too_large' }, 413);
+  }
+
   // HMAC verification
   const signature = request.headers.get('X-BugPulse-Signature');
   const timestamp = request.headers.get('X-BugPulse-Timestamp');
   const body = await request.text();
+
+  if (body.length > MAX_BODY_BYTES) {
+    return json({ error: 'payload_too_large' }, 413);
+  }
 
   if (!signature || !timestamp) {
     return json({ error: 'invalid_signature' }, 403);
@@ -113,7 +126,7 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
   const errorMsg = report.diagnostics?.lastError?.message ?? null;
   if (checkTierAccess(user.plan, 'dedup')) {
     const { isDuplicate, existingIssueUrl } = await checkDuplicate(
-      env, user.id, report.screen, errorMsg,
+      env, user.id, report.screen, errorMsg, report.description,
     );
 
     if (isDuplicate && existingIssueUrl) {
@@ -161,21 +174,20 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
 
     // Update dedup hash with issue URL
     if (primaryResult && checkTierAccess(user.plan, 'dedup')) {
-      await updateHashWithIssueUrl(env, user.id, report.screen, errorMsg, primaryResult.url);
+      await updateHashWithIssueUrl(env, user.id, report.screen, errorMsg, primaryResult.url, report.description);
     }
   } catch (error) {
     console.error('[BugPulse Proxy] Primary integration failed:', error);
     return json({ error: 'internal_error' }, 500);
   }
 
-  // Async: enqueue secondary integrations
+  // Async: enqueue secondary integrations (store ID only, decrypt in consumer)
   for (let i = 1; i < activeIntegrations.length; i++) {
     const integration = activeIntegrations[i]!;
-    const config = JSON.parse(await decrypt(integration.config, env.ENCRYPTION_KEY)) as Record<string, string>;
 
     await env.FANOUT_QUEUE.send({
       report,
-      integration: { id: integration.id, type: integration.type, config },
+      integration: { id: integration.id, type: integration.type },
       labels,
       screenshotUrl,
       userId: user.id,
@@ -188,14 +200,19 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
 
 // --- Queue processing ---
 
-async function processQueueMessage(msg: QueueMessage, _env: Env): Promise<void> {
-  await createIssue(
-    msg.integration.type,
-    msg.report,
-    msg.integration.config,
-    msg.labels,
-    msg.screenshotUrl,
-  );
+async function processQueueMessage(msg: QueueMessage, env: Env): Promise<void> {
+  // Re-fetch and decrypt credentials from D1 (never stored in queue)
+  const row = await env.DB.prepare(
+    'SELECT config FROM integrations WHERE id = ?',
+  ).bind(msg.integration.id).first<{ config: string }>();
+
+  if (!row) {
+    console.error(`[BugPulse Proxy] Integration ${msg.integration.id} not found`);
+    return;
+  }
+
+  const config = JSON.parse(await decrypt(row.config, env.ENCRYPTION_KEY)) as Record<string, string>;
+  await createIssue(msg.integration.type, msg.report, config, msg.labels, msg.screenshotUrl);
 }
 
 // --- Integration dispatch ---
@@ -272,7 +289,12 @@ function filterByRoutingRules(
       continue;
     }
 
-    const conditions = JSON.parse(rule.conditions) as RoutingConditions;
+    let conditions: RoutingConditions;
+    try {
+      conditions = JSON.parse(rule.conditions) as RoutingConditions;
+    } catch {
+      continue; // Skip malformed rules
+    }
     if (matchesConditions(conditions, report)) {
       matchedIds.add(rule.integration_id);
     }
@@ -304,22 +326,18 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
     return json({ error: 'validation_error', details: ['email required'] }, 422);
   }
 
-  // Check if email already exists
-  const existing = await env.DB.prepare(
-    'SELECT id FROM users WHERE email = ?',
-  ).bind(body.email).first();
-
-  if (existing) {
-    return json({ error: 'email_exists' }, 409);
-  }
-
   const id = crypto.randomUUID();
   const apiKey = `bp_${crypto.randomUUID().replace(/-/g, '')}`;
   const hmacSecret = `bps_${crypto.randomUUID().replace(/-/g, '')}`;
 
-  await env.DB.prepare(
-    'INSERT INTO users (id, email, api_key, hmac_secret, plan) VALUES (?, ?, ?, ?, ?)',
+  // INSERT OR IGNORE to handle race conditions on duplicate email
+  const result = await env.DB.prepare(
+    'INSERT OR IGNORE INTO users (id, email, api_key, hmac_secret, plan) VALUES (?, ?, ?, ?, ?)',
   ).bind(id, body.email, apiKey, hmacSecret, 'free').run();
+
+  if (result.meta.changes === 0) {
+    return json({ error: 'email_exists' }, 409);
+  }
 
   return json({ api_key: apiKey, hmac_secret: hmacSecret });
 }
@@ -333,6 +351,10 @@ async function handleCreateIntegration(request: Request, env: Env): Promise<Resp
   const body = (await request.json()) as { type?: string; config?: Record<string, string> };
   if (!body.type || !body.config) {
     return json({ error: 'validation_error', details: ['type and config required'] }, 422);
+  }
+
+  if (!VALID_INTEGRATION_TYPES.has(body.type)) {
+    return json({ error: 'validation_error', details: [`Invalid type. Must be one of: ${[...VALID_INTEGRATION_TYPES].join(', ')}`] }, 422);
   }
 
   const id = crypto.randomUUID();
@@ -379,6 +401,14 @@ async function handleCreateRoutingRule(request: Request, env: Env): Promise<Resp
   const body = (await request.json()) as { integration_id?: string; conditions?: RoutingConditions | null };
   if (!body.integration_id) {
     return json({ error: 'validation_error', details: ['integration_id required'] }, 422);
+  }
+
+  // Verify integration belongs to this user
+  const integration = await env.DB.prepare(
+    'SELECT id FROM integrations WHERE id = ? AND user_id = ?',
+  ).bind(body.integration_id, user.id).first();
+  if (!integration) {
+    return json({ error: 'validation_error', details: ['integration not found'] }, 422);
   }
 
   const id = crypto.randomUUID();
