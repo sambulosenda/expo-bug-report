@@ -157,12 +157,15 @@ function formatSlackMessage(
     );
   }
 
-  const timeline = formatTimeline(report);
-  if (timeline) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: timeline },
-    });
+  // Only show raw timeline if repro steps aren't present (avoids redundancy)
+  if (!report.reproSteps || report.reproSteps.length === 0) {
+    const timeline = formatTimeline(report);
+    if (timeline) {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: timeline },
+      });
+    }
   }
 
   if (screenshotUrl) {

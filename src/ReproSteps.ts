@@ -8,9 +8,9 @@ interface TimelineEvent {
 function formatTime(isoTimestamp: string): string {
   try {
     const date = new Date(isoTimestamp);
-    const h = date.getHours().toString().padStart(2, '0');
-    const m = date.getMinutes().toString().padStart(2, '0');
-    const s = date.getSeconds().toString().padStart(2, '0');
+    const h = date.getUTCHours().toString().padStart(2, '0');
+    const m = date.getUTCMinutes().toString().padStart(2, '0');
+    const s = date.getUTCSeconds().toString().padStart(2, '0');
     return `${h}:${m}:${s}`;
   } catch {
     return '';
@@ -29,6 +29,10 @@ function summarizeStateDiff(prevJson: string, currJson: string, storeName: strin
       const prevVal = prev[key];
       const currVal = curr[key];
 
+      // Use JSON comparison for objects (already parsed from JSON, so this is safe)
+      if (typeof prevVal === 'object' && typeof currVal === 'object'
+        && prevVal !== null && currVal !== null
+        && JSON.stringify(prevVal) === JSON.stringify(currVal)) continue;
       if (prevVal === currVal) continue;
 
       // For arrays, show length change
