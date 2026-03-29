@@ -1,6 +1,6 @@
 {
   "name": "@bugpulse/react-native",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Lightweight in-app bug reporting for React Native & Expo. Shake to report. Screenshot annotation. Pluggable integrations.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,10 +22,7 @@
   "author": "Sambulo Senda",
   "license": "MIT",
   "peerDependencies": {
-    "expo-constants": ">=16.0.0",
-    "expo-device": ">=6.0.0",
     "expo-file-system": ">=16.0.0",
-    "expo-localization": ">=14.0.0",
     "expo-sensors": ">=13.0.0",
     "react": ">=18.0.0",
     "react-native": ">=0.72.0",
@@ -34,6 +31,15 @@
     "react-native-view-shot": ">=3.8.0"
   },
   "peerDependenciesMeta": {
+    "expo-constants": {
+      "optional": true
+    },
+    "expo-device": {
+      "optional": true
+    },
+    "expo-localization": {
+      "optional": true
+    },
     "expo-router": {
       "optional": true
     },
