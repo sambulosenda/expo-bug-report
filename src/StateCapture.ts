@@ -13,6 +13,44 @@ interface TrackedStore {
 
 const stores = new Map<string, TrackedStore>();
 let frozenSnapshot: StateSnapshot[] | null = null;
+let redactedKeys: string[] = [];
+
+function deleteNestedKey(obj: Record<string, unknown>, keyPath: string): void {
+  const parts = keyPath.split('.');
+  let current: Record<string, unknown> = obj;
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i]!;
+    if (current[part] == null || typeof current[part] !== 'object') return;
+    current = current[part] as Record<string, unknown>;
+  }
+
+  const lastKey = parts[parts.length - 1]!;
+  if (lastKey in current) {
+    current[lastKey] = '[REDACTED]';
+  }
+}
+
+function applyRedaction(state: unknown): unknown {
+  if (redactedKeys.length === 0 || state == null || typeof state !== 'object') {
+    return state;
+  }
+
+  // Deep clone to avoid mutating the original store state
+  const cloned = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+  for (const keyPath of redactedKeys) {
+    deleteNestedKey(cloned, keyPath);
+  }
+  return cloned;
+}
+
+export function redactStateKeys(keys: string[]): void {
+  redactedKeys = keys;
+}
+
+export function clearRedactedKeys(): void {
+  redactedKeys = [];
+}
 
 function serializeState(state: unknown): { json: string; truncated: boolean } {
   try {
@@ -41,7 +79,8 @@ export function trackStore(
   const buffer = new RingBuffer<StateSnapshot>(MAX_ENTRIES);
 
   const unsubscribe = store.subscribe(() => {
-    const { json, truncated } = serializeState(store.getState());
+    const redacted = applyRedaction(store.getState());
+    const { json, truncated } = serializeState(redacted);
     buffer.push({
       name: options.name,
       state: json,
