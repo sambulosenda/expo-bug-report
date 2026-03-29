@@ -64,6 +64,36 @@
 **Depends on:** ProxyIntegration with fallback mode.
 **Added:** 2026-03-29 via /plan-ceo-review (outside voice finding)
 
+## Console log capture
+**Status:** TODO
+**Priority:** P2
+**What:** Patch console.warn and console.error to capture last 20 entries in a ring buffer, included in bug report diagnostics.
+**Why:** Console breadcrumbs show what the app was "thinking" leading up to a bug. Completes the debugging context alongside state + nav.
+**Context:** Monkey-patching console in RN interacts with LogBox (which hooks console.error). Needs dedicated testing to avoid suppressing/duplicating warnings. Sentry also patches console; coexistence must be verified. Timestamps required for correlation with nav/state timeline.
+**Effort:** S (CC: ~15 min)
+**Depends on:** v1 launch + LogBox interaction testing + Sentry coexistence verification.
+**Added:** 2026-03-29 via /plan-ceo-review (outside voice deferred)
+
+## Category chips in report modal
+**Status:** TODO
+**Priority:** P2
+**What:** Add tappable category chips (user-defined, not hardcoded) to the bug report modal for structured triage.
+**Why:** Structured data enables filtering/routing reports by type. Faster for reporters than free text alone.
+**Context:** Deferred from v1 launch because hardcoding categories before having real users means picking wrong ones. v1 ships with freeform text to learn how users naturally describe bugs. After analyzing freeform descriptions from real usage, build chips with data-informed categories. Categories should be configurable by the developer, not fixed.
+**Effort:** S (CC: ~20 min)
+**Depends on:** v1 launch + analysis of real user bug descriptions to determine categories.
+**Added:** 2026-03-29 via /plan-ceo-review (outside voice deferred)
+
+## Performance metrics capture (RN-specific)
+**Status:** TODO
+**Priority:** P3
+**What:** Capture JS thread FPS and memory usage at bug report time, included in diagnostics.
+**Why:** Quantitative data for "app was slow" reports where the user can't articulate what happened.
+**Context:** performance.memory does NOT exist in React Native (Chrome-only API). FPS via requestAnimationFrame at report time measures the modal animating, not the bug. Continuous background FPS sampling means CPU overhead in prod. Needs research into Hermes profiling APIs or native module bridge for memory. Platform-specific implementation required.
+**Effort:** L (human) / M (CC)
+**Depends on:** v1 launch + research into available RN/Hermes performance APIs.
+**Added:** 2026-03-29 via /plan-ceo-review (outside voice deferred)
+
 ## Module-level singleton refactor
 **Status:** TODO
 **Priority:** Low
