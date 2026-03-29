@@ -44,6 +44,26 @@
 **Depends on:** v1 launch + user feedback about lost reports.
 **Added:** 2026-03-29 via /plan-eng-review (CEO review expansion deferred)
 
+## Token validation on integration setup
+**Status:** TODO
+**Priority:** P1
+**What:** When a user configures a Linear/GitHub/Jira integration via `POST /v1/integrations`, proxy makes a test API call to validate the token before saving.
+**Why:** Without validation, users discover bad tokens only when their first bug report fails to create an issue. Bad UX for a paid feature.
+**Context:** Each integration type needs its own validation endpoint (Linear: `GET /v1/me`, GitHub: `GET /user`, Jira: `GET /rest/api/3/myself`). Adds ~500ms latency to integration setup. Accept as tradeoff for better reliability.
+**Effort:** S (CC: ~15 min)
+**Depends on:** Proxy baseline with integration CRUD endpoints.
+**Added:** 2026-03-29 via /plan-ceo-review (outside voice finding)
+
+## Proxy + fallback double failure handling
+**Status:** TODO
+**Priority:** P2
+**What:** If proxy returns 5xx AND the fallback webhook also fails, the report is currently lost silently. Add a third-level fallback: show error screen with copy-to-clipboard option (existing pattern in BugReportModal).
+**Why:** Prevents silent report loss in the (rare) case where both proxy and fallback are down simultaneously.
+**Context:** The copy-to-clipboard UI already exists in the error step of BugReportModal. ProxyIntegration needs to surface the error to the modal rather than swallowing it. Alternative: AsyncStorage queue for retry (brings back offline queueing complexity).
+**Effort:** S (CC: ~20 min)
+**Depends on:** ProxyIntegration with fallback mode.
+**Added:** 2026-03-29 via /plan-ceo-review (outside voice finding)
+
 ## Module-level singleton refactor
 **Status:** TODO
 **Priority:** Low
