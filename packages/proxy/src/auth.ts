@@ -40,7 +40,13 @@ export async function verifyHmac(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  return expectedHex === signature;
+  // Constant-time comparison to prevent timing attacks
+  if (expectedHex.length !== signature.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expectedHex.length; i++) {
+    mismatch |= expectedHex.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return mismatch === 0;
 }
 
 async function sha256(data: string): Promise<string> {

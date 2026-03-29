@@ -2,14 +2,15 @@ const IV_LENGTH = 12;
 
 async function getKey(secret: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
+  // Derive a consistent 32-byte key from arbitrary-length secret via SHA-256
+  const hash = await crypto.subtle.digest('SHA-256', encoder.encode(secret));
+  return crypto.subtle.importKey(
     'raw',
-    encoder.encode(secret).slice(0, 32),
+    hash,
     'AES-GCM',
     false,
     ['encrypt', 'decrypt'],
   );
-  return keyMaterial;
 }
 
 export async function encrypt(plaintext: string, secret: string): Promise<string> {
