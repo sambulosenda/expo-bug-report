@@ -17,6 +17,8 @@ import { collectDeviceInfo } from './DeviceInfo';
 import { getStateSnapshot } from './StateCapture';
 import { getNavHistory } from './NavigationTracker';
 import { getLastError } from './ErrorBoundary';
+import { generateReproSteps } from './ReproSteps';
+import { detectSeverity } from './Severity';
 import { useThemeColors } from './useThemeColors';
 import type { Integration, BugReport, IssueLinkInfo } from './integrations/types';
 
@@ -142,19 +144,24 @@ export function BugReportModal({
       typeof metadata === 'function' ? metadata() : metadata;
     const screenName = screenNameProvider();
 
+    const diagnostics = {
+      stateSnapshots: getStateSnapshot(),
+      navHistory: getNavHistory(),
+      lastError: getLastError(),
+    };
+    const trimmedDesc = description.trim();
+
     return {
       screenshot: screenshotUri,
       annotatedScreenshot: annotatedUri,
-      description: description.trim(),
+      description: trimmedDesc,
       device: collectDeviceInfo(),
       screen: screenName,
       timestamp: new Date().toISOString(),
       metadata: resolvedMetadata,
-      diagnostics: {
-        stateSnapshots: getStateSnapshot(),
-        navHistory: getNavHistory(),
-        lastError: getLastError(),
-      },
+      diagnostics,
+      reproSteps: generateReproSteps(diagnostics),
+      severity: detectSeverity(diagnostics, trimmedDesc),
     };
   }, [screenshotUri, annotatedUri, description, metadata, screenNameProvider]);
 

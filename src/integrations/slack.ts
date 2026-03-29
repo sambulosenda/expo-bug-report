@@ -89,10 +89,29 @@ function formatTimeline(report: BugReport): string {
   return truncateString(result, MAX_BLOCK_TEXT);
 }
 
+function severityEmoji(severity: string | undefined): string {
+  switch (severity) {
+    case 'crash': return '\u{1F6A8}';
+    case 'error': return '\u26A0\uFE0F';
+    default: return '\u{1F4AC}';
+  }
+}
+
+function severityLabel(severity: string | undefined): string {
+  switch (severity) {
+    case 'crash': return 'Crash';
+    case 'error': return 'Error';
+    default: return 'Feedback';
+  }
+}
+
 function formatSlackMessage(
   report: BugReport,
   screenshotUrl: string | null,
 ): Record<string, unknown> {
+  const emoji = severityEmoji(report.severity);
+  const label = severityLabel(report.severity);
+
   const fields = [
     `*Screen:* ${report.screen}`,
     `*Device:* ${report.device.model}`,
@@ -115,13 +134,28 @@ function formatSlackMessage(
   const blocks: Record<string, unknown>[] = [
     {
       type: 'header',
-      text: { type: 'plain_text', text: 'Bug Report', emoji: true },
+      text: { type: 'plain_text', text: `${emoji} Bug Report \u2014 ${label}`, emoji: true },
     },
     {
       type: 'section',
       text: { type: 'mrkdwn', text: fields.join('\n') },
     },
   ];
+
+  // Repro steps section
+  if (report.reproSteps && report.reproSteps.length > 0) {
+    const stepsText = report.reproSteps.join('\n');
+    blocks.push(
+      { type: 'divider' },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Steps to Reproduce:*\n${truncateString(stepsText, MAX_BLOCK_TEXT)}`,
+        },
+      },
+    );
+  }
 
   const timeline = formatTimeline(report);
   if (timeline) {

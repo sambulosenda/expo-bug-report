@@ -24,6 +24,8 @@ export interface Diagnostics {
   lastError: ErrorInfo | null;
 }
 
+export type ReportSeverity = 'crash' | 'error' | 'feedback';
+
 export interface BugReport {
   screenshot: string | null;
   annotatedScreenshot: string | null;
@@ -33,6 +35,8 @@ export interface BugReport {
   timestamp: string;
   metadata: Record<string, string>;
   diagnostics?: Diagnostics;
+  reproSteps?: string[];
+  severity?: ReportSeverity;
 }
 
 export interface DeviceInfo {
