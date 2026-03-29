@@ -1,0 +1,20 @@
+{
+  "name": "@bugpulse/cli",
+  "version": "0.1.0",
+  "description": "CLI for BugPulse proxy management",
+  "bin": {
+    "bugpulse": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "files": ["dist/"],
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

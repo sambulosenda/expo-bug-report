@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BugPulse — React Native Bug Reporting</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e5e5e5; }
+    .container { max-width: 720px; margin: 0 auto; padding: 60px 24px; }
+    h1 { font-size: 2.5rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+    .subtitle { font-size: 1.2rem; color: #a3a3a3; margin-bottom: 48px; line-height: 1.6; }
+    .features { display: grid; gap: 16px; margin-bottom: 48px; }
+    .feature { background: #171717; border: 1px solid #262626; border-radius: 12px; padding: 20px; }
+    .feature h3 { font-size: 1rem; color: #fff; margin-bottom: 6px; }
+    .feature p { font-size: 0.9rem; color: #a3a3a3; line-height: 1.5; }
+    .pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 48px; }
+    .tier { background: #171717; border: 1px solid #262626; border-radius: 12px; padding: 24px; }
+    .tier.highlight { border-color: #3b82f6; }
+    .tier h3 { font-size: 1.1rem; color: #fff; margin-bottom: 4px; }
+    .tier .price { font-size: 1.8rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+    .tier .price span { font-size: 0.9rem; font-weight: 400; color: #a3a3a3; }
+    .tier ul { list-style: none; }
+    .tier li { font-size: 0.85rem; color: #a3a3a3; padding: 4px 0; }
+    .tier li::before { content: "✓ "; color: #3b82f6; }
+    .signup-box { background: #171717; border: 1px solid #262626; border-radius: 12px; padding: 32px; text-align: center; }
+    .signup-box h2 { font-size: 1.3rem; color: #fff; margin-bottom: 8px; }
+    .signup-box p { font-size: 0.9rem; color: #a3a3a3; margin-bottom: 20px; }
+    .form-row { display: flex; gap: 8px; max-width: 400px; margin: 0 auto; }
+    input[type="email"] { flex: 1; padding: 12px 16px; border-radius: 8px; border: 1px solid #333; background: #0a0a0a; color: #fff; font-size: 1rem; outline: none; }
+    input[type="email"]:focus { border-color: #3b82f6; }
+    button { padding: 12px 24px; border-radius: 8px; border: none; background: #3b82f6; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #333; cursor: not-allowed; }
+    .result { margin-top: 20px; text-align: left; background: #0a0a0a; border: 1px solid #262626; border-radius: 8px; padding: 16px; display: none; }
+    .result code { color: #3b82f6; font-family: 'SF Mono', monospace; font-size: 0.85rem; }
+    .result .warning { color: #f59e0b; font-size: 0.8rem; margin-top: 12px; }
+    .cli-alt { margin-top: 16px; font-size: 0.85rem; color: #737373; }
+    .cli-alt code { background: #262626; padding: 2px 8px; border-radius: 4px; color: #e5e5e5; }
+    footer { text-align: center; margin-top: 48px; font-size: 0.8rem; color: #525252; }
+    footer a { color: #737373; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BugPulse</h1>
+    <p class="subtitle">
+      In-app bug reporting for React Native. Shake to report. Every bug report includes
+      Zustand/Redux state, navigation history, and JS errors. Route to Linear, GitHub, or Jira.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <h3>RN-Specific Diagnostics</h3>
+        <p>Every report captures what cross-platform tools miss: Zustand/Redux state snapshots, Expo Router navigation history, JS error boundaries.</p>
+      </div>
+      <div class="feature">
+        <h3>Route Anywhere</h3>
+        <p>Reports go to Linear, GitHub Issues, Jira, or Slack. Multi-destination routing. Auto-labeling by screen, platform, and error type.</p>
+      </div>
+      <div class="feature">
+        <h3>Zero Backend (Free Tier)</h3>
+        <p>Free tier sends directly to Slack webhooks. No account needed. Paid proxy handles auth-required integrations like Linear and Jira.</p>
+      </div>
+    </div>
+
+    <div class="pricing">
+      <div class="tier">
+        <h3>Free</h3>
+        <div class="price">$0</div>
+        <ul>
+          <li>SDK with all diagnostics</li>
+          <li>Direct Slack/webhook</li>
+          <li>Open source</li>
+        </ul>
+      </div>
+      <div class="tier highlight">
+        <h3>Starter</h3>
+        <div class="price">$9<span>/mo</span></div>
+        <ul>
+          <li>Linear + GitHub + Jira</li>
+          <li>2 destinations</li>
+          <li>Auto-labeling</li>
+          <li>500 reports/mo</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <h3>Pro</h3>
+        <div class="price">$19<span>/mo</span></div>
+        <ul>
+          <li>Unlimited destinations</li>
+          <li>Duplicate detection</li>
+          <li>Report enrichment</li>
+          <li>Unlimited reports</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="signup-box">
+      <h2>Get Started</h2>
+      <p>Sign up to get your API key for the proxy.</p>
+      <div class="form-row">
+        <input type="email" id="email" placeholder="you@company.com" />
+        <button id="signup-btn" onclick="signup()">Sign Up</button>
+      </div>
+      <div id="result" class="result">
+        <p><strong>API Key:</strong> <code id="api-key"></code></p>
+        <p><strong>HMAC Secret:</strong> <code id="hmac-secret"></code></p>
+        <p class="warning">Save these now. The HMAC secret cannot be retrieved later.</p>
+      </div>
+      <p class="cli-alt">Or use the CLI: <code>npx @bugpulse/cli signup</code></p>
+    </div>
+
+    <footer>
+      <p><a href="https://github.com/sambulosenda/expo-bug-report">GitHub</a> · MIT License · Built by Tech Bridge Digital</p>
+    </footer>
+  </div>
+
+  <script>
+    const PROXY_URL = 'https://proxy.bugpulse.dev';
+
+    async function signup() {
+      const email = document.getElementById('email').value.trim();
+      if (!email || !email.includes('@')) return alert('Enter a valid email.');
+
+      const btn = document.getElementById('signup-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
+      try {
+        const res = await fetch(PROXY_URL + '/v1/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        if (res.status === 409) {
+          alert('This email is already registered.');
+          return;
+        }
+
+        if (!res.ok) {
+          alert('Signup failed. Try again.');
+          return;
+        }
+
+        const data = await res.json();
+        document.getElementById('api-key').textContent = data.api_key;
+        document.getElementById('hmac-secret').textContent = data.hmac_secret;
+        document.getElementById('result').style.display = 'block';
+        btn.textContent = 'Done';
+      } catch (e) {
+        alert('Network error. Check your connection.');
+      } finally {
+        btn.disabled = false;
+        if (btn.textContent !== 'Done') btn.textContent = 'Sign Up';
+      }
+    }
+  </script>
+</body>
+</html>

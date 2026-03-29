@@ -1,0 +1,29 @@
+name = "bugpulse-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-03-01"
+
+[triggers]
+crons = ["0 3 * * *"]  # Daily hash cleanup at 3 AM UTC
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bugpulse"
+database_id = "PLACEHOLDER"
+
+[[r2_buckets]]
+binding = "SCREENSHOTS"
+bucket_name = "bugpulse-screenshots"
+
+[[queues.producers]]
+queue = "bugpulse-fanout"
+binding = "FANOUT_QUEUE"
+
+[[queues.consumers]]
+queue = "bugpulse-fanout"
+max_batch_size = 10
+max_retries = 3
+
+# Secrets (set via `wrangler secret put`):
+# ENCRYPTION_KEY - AES-256-GCM key for credential encryption
+# STRIPE_SECRET_KEY - Stripe API key
+# STRIPE_WEBHOOK_SECRET - Stripe webhook signing secret
