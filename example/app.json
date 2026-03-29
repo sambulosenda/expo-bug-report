@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "BugPulse Example",
+    "slug": "bugpulse-example",
+    "version": "1.0.0",
+    "scheme": "bugpulse-example",
+    "platforms": ["ios", "android"],
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.bugpulse.example"
+    },
+    "android": {
+      "package": "com.bugpulse.example"
+    },
+    "plugins": ["expo-router"]
+  }
+}
