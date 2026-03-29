@@ -45,9 +45,16 @@ export interface DeviceInfo {
   expoConfig: { name: string; slug: string } | null;
 }
 
+export interface IssueLinkInfo {
+  destination: string;
+  url: string;
+  key: string;
+}
+
 export interface SendResult {
   success: boolean;
   error?: string;
+  issues?: IssueLinkInfo[];
 }
 
 export interface Integration {

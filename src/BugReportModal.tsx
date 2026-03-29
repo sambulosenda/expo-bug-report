@@ -18,7 +18,7 @@ import { getStateSnapshot } from './StateCapture';
 import { getNavHistory } from './NavigationTracker';
 import { getLastError } from './ErrorBoundary';
 import { useThemeColors } from './useThemeColors';
-import type { Integration, BugReport } from './integrations/types';
+import type { Integration, BugReport, IssueLinkInfo } from './integrations/types';
 
 // Optional dep: expo-clipboard (only used for copy-to-clipboard fallback)
 let Clipboard: { setStringAsync: (text: string) => Promise<void> } | null = null;
@@ -98,6 +98,7 @@ export function BugReportModal({
   const [errorMessage, setErrorMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [offlineWarning, setOfflineWarning] = useState(false);
+  const [filedIssues, setFiledIssues] = useState<IssueLinkInfo[]>([]);
 
   const { width: screenWidth } = Dimensions.get('window');
   const canvasHeight = screenWidth * 1.5;
@@ -110,6 +111,7 @@ export function BugReportModal({
       setErrorMessage('');
       setRetryCount(0);
       setOfflineWarning(false);
+      setFiledIssues([]);
     }
   }, [visible, screenshotUri]);
 
@@ -166,6 +168,17 @@ export function BugReportModal({
     const failures = results.filter(
       (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success),
     );
+
+    // Collect issue links from successful integrations
+    const allIssues: IssueLinkInfo[] = [];
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.issues) {
+        allIssues.push(...result.value.issues);
+      }
+    }
+    if (allIssues.length > 0) {
+      setFiledIssues(allIssues);
+    }
 
     if (failures.length === 0) {
       onSubmitSuccess?.();
@@ -225,6 +238,7 @@ export function BugReportModal({
     setErrorMessage('');
     setRetryCount(0);
     setOfflineWarning(false);
+    setFiledIssues([]);
     onClose();
   }, [onClose, screenshotUri]);
 
@@ -416,7 +430,7 @@ export function BugReportModal({
                 marginBottom: 8,
               }}
             >
-              Sent!
+              {filedIssues.length > 0 ? `Filed as ${filedIssues[0]!.key}` : 'Sent!'}
             </Text>
             <Text
               style={{
@@ -425,7 +439,9 @@ export function BugReportModal({
                 textAlign: 'center',
               }}
             >
-              Bug report submitted. Thanks for helping improve the app.
+              {filedIssues.length > 0
+                ? `Bug report tracked in ${filedIssues[0]!.destination}.`
+                : 'Bug report submitted. Thanks for helping improve the app.'}
             </Text>
             <TouchableOpacity
               onPress={handleClose}
