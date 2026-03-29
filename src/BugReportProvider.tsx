@@ -10,6 +10,9 @@ import { View } from 'react-native';
 import { useShakeDetector } from './ShakeDetector';
 import { captureScreenshot } from './ScreenCapture';
 import { BugReportModal } from './BugReportModal';
+import { freezeStateSnapshot, clearStateCapture } from './StateCapture';
+import { freezeNavHistory, clearNavHistory } from './NavigationTracker';
+import { clearLastError } from './ErrorBoundary';
 import type { Integration, BugReport } from './integrations/types';
 
 const DEBOUNCE_MS = 3000;
@@ -57,6 +60,10 @@ export function BugReportProvider({
     if (isModalVisibleRef.current) return;
     lastTriggerTimestamp.current = now;
 
+    // Freeze diagnostics at shake time (before user spends time annotating)
+    freezeStateSnapshot();
+    freezeNavHistory();
+
     const uri = await captureScreenshot(viewShotRef);
     setScreenshotUri(uri);
     isModalVisibleRef.current = true;
@@ -67,6 +74,12 @@ export function BugReportProvider({
     isModalVisibleRef.current = false;
     setIsModalVisible(false);
     setScreenshotUri(null);
+  }, []);
+
+  const handleSubmitSuccess = useCallback(() => {
+    clearStateCapture();
+    clearNavHistory();
+    clearLastError();
   }, []);
 
   useShakeDetector(triggerBugReport, {
@@ -94,6 +107,7 @@ export function BugReportProvider({
         metadata={metadata}
         screenNameProvider={screenNameProvider}
         onClose={handleClose}
+        onSubmitSuccess={handleSubmitSuccess}
         onError={onError}
       />
     </BugReportContext.Provider>

@@ -11,6 +11,8 @@ const mockReport: BugReport = {
     appVersion: '1.0.0',
     screenSize: '390x844',
     locale: 'en-US',
+    installationId: 'test-id',
+    expoConfig: { name: 'TestApp', slug: 'test-app' },
   },
   screen: 'HomeScreen',
   timestamp: '2026-03-28T12:00:00.000Z',
@@ -87,6 +89,45 @@ describe('SlackIntegration', () => {
     const result = await integration.send({ ...mockReport, screenshot: null });
     expect(result.success).toBe(false);
     expect(result.error).toBe('Network error');
+  });
+
+  it('includes truncated diagnostics in slack message', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true });
+    const integration = SlackIntegration({ webhookUrl: 'https://hooks.slack.com/test' });
+
+    const reportWithDiagnostics = {
+      ...mockReport,
+      screenshot: null,
+      diagnostics: {
+        stateSnapshots: [
+          { name: 'app', state: '{"count":42}', timestamp: '2026-03-28T12:00:00Z', truncated: false },
+        ],
+        navHistory: [
+          { pathname: '/home', segments: ['home'], timestamp: '2026-03-28T12:00:00Z' },
+          { pathname: '/settings', segments: ['settings'], timestamp: '2026-03-28T12:01:00Z' },
+        ],
+        lastError: {
+          message: 'TypeError: undefined is not a function',
+          stack: 'TypeError: undefined is not a function\n    at Object.<anonymous>',
+          componentStack: null,
+          timestamp: '2026-03-28T12:00:00Z',
+        },
+      },
+    };
+
+    await integration.send(reportWithDiagnostics);
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    const blocks = body.blocks;
+    // Should have header, main info, diagnostics, no image
+    expect(blocks.length).toBeGreaterThanOrEqual(3);
+    const diagnosticsBlock = blocks.find(
+      (b: any) => b.type === 'section' && b.text?.text?.includes('Last Error'),
+    );
+    expect(diagnosticsBlock).toBeDefined();
+    expect(diagnosticsBlock.text.text).toContain('TypeError');
+    expect(diagnosticsBlock.text.text).toContain('/home');
+    expect(diagnosticsBlock.text.text).toContain('app');
   });
 
   it('handles image upload failure gracefully', async () => {

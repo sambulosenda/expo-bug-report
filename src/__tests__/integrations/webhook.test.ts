@@ -11,6 +11,8 @@ const mockReport: BugReport = {
     appVersion: '1.0.0',
     screenSize: '390x844',
     locale: 'en-US',
+    installationId: 'test-id',
+    expoConfig: { name: 'TestApp', slug: 'test-app' },
   },
   screen: 'Settings',
   timestamp: '2026-03-28T12:00:00.000Z',
@@ -79,5 +81,32 @@ describe('WebhookIntegration', () => {
     const result = await integration.send({ ...mockReport, screenshot: null, annotatedScreenshot: null });
     expect(result.success).toBe(false);
     expect(result.error).toBe('Connection refused');
+  });
+
+  it('includes full diagnostics in payload', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: true });
+    const integration = WebhookIntegration({ url: 'https://api.example.com/bugs' });
+
+    const diagnostics = {
+      stateSnapshots: [
+        { name: 'app', state: '{"count":42}', timestamp: '2026-03-28T12:00:00Z', truncated: false },
+      ],
+      navHistory: [
+        { pathname: '/home', segments: ['home'], timestamp: '2026-03-28T12:00:00Z' },
+      ],
+      lastError: null,
+    };
+
+    await integration.send({
+      ...mockReport,
+      screenshot: null,
+      annotatedScreenshot: null,
+      diagnostics,
+    });
+
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.diagnostics).toEqual(diagnostics);
+    expect(body.diagnostics.stateSnapshots).toHaveLength(1);
+    expect(body.diagnostics.navHistory).toHaveLength(1);
   });
 });

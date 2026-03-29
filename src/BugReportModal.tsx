@@ -14,6 +14,9 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { AnnotationCanvas } from './AnnotationCanvas';
 import { collectDeviceInfo } from './DeviceInfo';
+import { getStateSnapshot } from './StateCapture';
+import { getNavHistory } from './NavigationTracker';
+import { getLastError } from './ErrorBoundary';
 import type { Integration, BugReport } from './integrations/types';
 
 interface BugReportModalProps {
@@ -23,6 +26,7 @@ interface BugReportModalProps {
   metadata: Record<string, string> | (() => Record<string, string>);
   screenNameProvider: () => string;
   onClose: () => void;
+  onSubmitSuccess?: () => void;
   onError?: (error: Error, report: BugReport) => void;
 }
 
@@ -37,6 +41,7 @@ export function BugReportModal({
   metadata,
   screenNameProvider,
   onClose,
+  onSubmitSuccess,
   onError,
 }: BugReportModalProps) {
   const [step, setStep] = useState<ModalStep>(
@@ -84,71 +89,64 @@ export function BugReportModal({
       screen: screenName,
       timestamp: new Date().toISOString(),
       metadata: resolvedMetadata,
+      diagnostics: {
+        stateSnapshots: getStateSnapshot(),
+        navHistory: getNavHistory(),
+        lastError: getLastError(),
+      },
     };
   }, [screenshotUri, annotatedUri, description, metadata, screenNameProvider]);
+
+  const sendReport = useCallback(async (): Promise<boolean> => {
+    const report = buildReport();
+
+    const results = await Promise.allSettled(
+      integrations.map((integration) => integration.send(report)),
+    );
+
+    const failures = results.filter(
+      (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success),
+    );
+
+    if (failures.length === 0) {
+      onSubmitSuccess?.();
+      return true;
+    }
+
+    const firstError =
+      failures[0]?.status === 'fulfilled'
+        ? failures[0].value.error
+        : 'Send failed';
+    const errorMsg = firstError ?? 'Send failed';
+    setErrorMessage(errorMsg);
+    onError?.(new Error(errorMsg), report);
+    return false;
+  }, [buildReport, integrations, onSubmitSuccess, onError]);
 
   const handleSubmit = useCallback(async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     setErrorMessage('');
 
-    const report = buildReport();
-
-    const results = await Promise.allSettled(
-      integrations.map((integration) => integration.send(report)),
-    );
-
-    const failures = results.filter(
-      (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success),
-    );
-
-    if (failures.length === 0) {
-      setStep('success');
-    } else {
-      const firstError =
-        failures[0]?.status === 'fulfilled'
-          ? failures[0].value.error
-          : 'Send failed';
-      const errorMsg = firstError ?? 'Send failed';
-      setErrorMessage(errorMsg);
-      setStep('error');
-      onError?.(new Error(errorMsg), report);
-    }
+    const success = await sendReport();
+    setStep(success ? 'success' : 'error');
 
     setIsSubmitting(false);
-  }, [isSubmitting, buildReport, integrations, onError]);
+  }, [isSubmitting, sendReport]);
 
   const handleRetry = useCallback(async () => {
     if (retryCount >= MAX_RETRIES) return;
     setRetryCount((prev) => prev + 1);
-    // Call submit directly without resetting step to avoid race condition
     setIsSubmitting(true);
     setErrorMessage('');
 
-    const report = buildReport();
-
-    const results = await Promise.allSettled(
-      integrations.map((integration) => integration.send(report)),
-    );
-
-    const failures = results.filter(
-      (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success),
-    );
-
-    if (failures.length === 0) {
+    const success = await sendReport();
+    if (success) {
       setStep('success');
-    } else {
-      const firstError =
-        failures[0]?.status === 'fulfilled'
-          ? failures[0].value.error
-          : 'Send failed';
-      const errorMsg = firstError ?? 'Send failed';
-      setErrorMessage(errorMsg);
-      onError?.(new Error(errorMsg), report);
     }
 
     setIsSubmitting(false);
-  }, [retryCount, buildReport, integrations, onError]);
+  }, [retryCount, sendReport]);
 
   // handleClose defined before handleCopyToClipboard to avoid reference issue
   const handleClose = useCallback(() => {

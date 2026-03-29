@@ -10,6 +10,8 @@ describe('collectDeviceInfo', () => {
     expect(info.appVersion).toBe('1.0.0');
     expect(info.screenSize).toBe('390x844');
     expect(info.locale).toBe('en-US');
+    expect(info.installationId).toBe('test-installation-id');
+    expect(info.expoConfig).toEqual({ name: 'TestApp', slug: 'test-app' });
   });
 
   it('falls back when modelName is null', () => {

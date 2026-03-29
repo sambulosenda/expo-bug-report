@@ -9,6 +9,10 @@ export function collectDeviceInfo(): DeviceInfo {
   const locales = getLocales();
   const locale = locales[0]?.languageTag ?? 'unknown';
 
+  const expoConfig = Constants.expoConfig
+    ? { name: Constants.expoConfig.name ?? 'unknown', slug: Constants.expoConfig.slug ?? 'unknown' }
+    : null;
+
   return {
     model: Device.modelName ?? `${Platform.OS} device`,
     os: `${Platform.OS} ${Platform.Version}`,
@@ -18,5 +22,7 @@ export function collectDeviceInfo(): DeviceInfo {
       'unknown',
     screenSize: `${width}x${height}`,
     locale,
+    installationId: Constants.installationId ?? 'unknown',
+    expoConfig,
   };
 }

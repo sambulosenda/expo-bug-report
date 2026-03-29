@@ -35,6 +35,44 @@ async function uploadImage(
   }
 }
 
+function truncateString(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + '...';
+}
+
+function formatDiagnosticsForSlack(report: BugReport): string {
+  const lines: string[] = [];
+
+  if (report.diagnostics) {
+    const { stateSnapshots, navHistory, lastError } = report.diagnostics;
+
+    if (lastError) {
+      lines.push(`*Last Error:* ${lastError.message}`);
+      if (lastError.stack) {
+        lines.push(`\`${truncateString(lastError.stack.split('\n')[0] ?? '', 200)}\``);
+      }
+    }
+
+    if (navHistory.length > 0) {
+      const recentRoutes = navHistory.slice(-5);
+      lines.push(`*Nav History (last ${recentRoutes.length}):*`);
+      for (const entry of recentRoutes) {
+        lines.push(`  ${entry.pathname}`);
+      }
+    }
+
+    if (stateSnapshots.length > 0) {
+      const recentStates = stateSnapshots.slice(-3);
+      lines.push(`*State Snapshots (last ${recentStates.length}):*`);
+      for (const snap of recentStates) {
+        lines.push(`  _${snap.name}:_ ${truncateString(snap.state, 200)}${snap.truncated ? ' [TRUNCATED]' : ''}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function formatSlackMessage(
   report: BugReport,
   screenshotUrl: string | null,
@@ -68,6 +106,14 @@ function formatSlackMessage(
       text: { type: 'mrkdwn', text: fields.join('\n') },
     },
   ];
+
+  const diagnosticsText = formatDiagnosticsForSlack(report);
+  if (diagnosticsText) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: diagnosticsText },
+    });
+  }
 
   if (screenshotUrl) {
     blocks.push({

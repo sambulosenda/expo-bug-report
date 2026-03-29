@@ -5,7 +5,15 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: {
+        jsx: 'react-jsx',
+        target: 'ES2020',
+        module: 'commonjs',
+        esModuleInterop: true,
+        strict: true,
+      },
+    }],
   },
   moduleNameMapper: {
     '^react-native$': '<rootDir>/src/__tests__/__mocks__/react-native.ts',
@@ -18,5 +26,6 @@ module.exports = {
     '^expo-clipboard$': '<rootDir>/src/__tests__/__mocks__/expo-clipboard.ts',
     '^expo-localization$': '<rootDir>/src/__tests__/__mocks__/expo-localization.ts',
     '^expo-file-system/legacy$': '<rootDir>/src/__tests__/__mocks__/expo-file-system-legacy.ts',
+    '^expo-router$': '<rootDir>/src/__tests__/__mocks__/expo-router.ts',
   },
 };

@@ -19,6 +19,7 @@ export function WebhookIntegration(config: WebhookConfig): Integration {
           annotatedScreenshotBase64: report.annotatedScreenshot
             ? await fileToBase64(report.annotatedScreenshot)
             : null,
+          diagnostics: report.diagnostics ?? null,
         };
 
         const response = await fetch(config.url, {
