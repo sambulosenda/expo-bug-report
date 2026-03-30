@@ -1290,8 +1290,16 @@ import Layout from '../layouts/Layout.astro';
       .logos { gap: 16px; }
       .logos-row { gap: 16px; }
       .signup-form { flex-direction: column; gap: 8px; }
-      .signup-input { border-radius: 8px; border-right: 1px solid var(--border); }
-      .signup-btn { border-radius: 8px !important; }
+      .signup-input { border-radius: var(--radius); border-right: 1px solid var(--border); }
+      .signup-btn { border-radius: var(--radius) !important; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 
