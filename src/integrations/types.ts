@@ -18,10 +18,17 @@ export interface ErrorInfo {
   timestamp: string;
 }
 
+export interface ConsoleLogEntry {
+  level: 'warn' | 'error';
+  message: string;
+  timestamp: string;
+}
+
 export interface Diagnostics {
   stateSnapshots: StateSnapshot[];
   navHistory: NavEntry[];
   lastError: ErrorInfo | null;
+  consoleLogs?: ConsoleLogEntry[];
 }
 
 export type ReportSeverity = 'crash' | 'error' | 'feedback';

@@ -8,7 +8,9 @@ export { BugPulseErrorBoundary } from './ErrorBoundary';
 export { generateReproSteps } from './ReproSteps';
 export { detectSeverity } from './Severity';
 export { useThemeColors } from './useThemeColors';
+export { startConsoleCapture, stopConsoleCapture, getConsoleLogs } from './ConsoleCapture';
 export type { ThemeColors } from './useThemeColors';
+export type { ConsoleEntry } from './ConsoleCapture';
 export type {
   Integration,
   BugReport,
@@ -20,4 +22,5 @@ export type {
   NavEntry,
   ErrorInfo,
   ReportSeverity,
+  ConsoleLogEntry,
 } from './integrations/types';

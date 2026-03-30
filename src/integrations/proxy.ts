@@ -27,6 +27,7 @@ interface ProxyConfig {
   fallbackWebhookUrl?: string;
   fallbackHeaders?: Record<string, string>;
   timeoutMs?: number;
+  pushToken?: string | null;
 }
 
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -183,6 +184,7 @@ export function ProxyIntegration(config: ProxyConfig): Integration {
           screenshotBase64: null,
           screenshotId,
           diagnostics: report.diagnostics ?? null,
+          pushToken: config.pushToken ?? null,
         });
 
         // HMAC-SHA256 signing
