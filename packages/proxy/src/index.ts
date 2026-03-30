@@ -18,7 +18,7 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5MB
 
 type AppEnv = { Bindings: Env; Variables: { user: User } };
 
-const app = new Hono<AppEnv>();
+export const app = new Hono<AppEnv>();
 
 // --- CORS ---
 app.use('*', cors());

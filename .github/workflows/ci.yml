@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  sdk:
+    name: SDK — build & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,4 +17,19 @@ jobs:
           node-version: 20
       - run: npm ci --legacy-peer-deps
       - run: npm run build
-      - run: npm test
+      - run: npx jest --no-coverage
+
+  proxy:
+    name: Proxy — test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/proxy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --legacy-peer-deps
+        working-directory: .
+      - run: npx vitest run
