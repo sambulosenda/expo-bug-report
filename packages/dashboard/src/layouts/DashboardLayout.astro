@@ -190,6 +190,12 @@ const navItems = [
     }
     .btn-sm { padding: 4px 12px; font-size: 12px; }
 
+    /* ===== Focus States ===== */
+    .nav-item:focus-visible, .btn:focus-visible, .topbar-hamburger:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
     /* ===== Content Area ===== */
     .dash-content {
       flex: 1;
