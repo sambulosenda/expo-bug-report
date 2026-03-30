@@ -727,18 +727,24 @@ app.post('/v1/auth/logout', requireDashboardAuth, async (c) => {
 });
 
 // --- Magic link auth ---
-app.get('/v1/auth/magic/:token', async (c) => {
+app.post('/v1/auth/magic/:token', async (c) => {
   const token = c.req.param('token');
 
+  // Atomic claim: UPDATE only if unused and not expired. Prevents race condition.
+  const claimed = await c.env.DB.prepare(
+    "UPDATE magic_tokens SET used = 1 WHERE token = ? AND used = 0 AND expires_at > datetime('now')",
+  ).bind(token).run();
+
+  if ((claimed.meta.changes ?? 0) === 0) {
+    // Either expired, already used, or doesn't exist
+    return c.json({ error: 'token_expired_or_invalid' }, 401);
+  }
+
   const row = await c.env.DB.prepare(
-    "SELECT team_member_id, user_id, used, expires_at FROM magic_tokens WHERE token = ? AND expires_at > datetime('now')",
-  ).bind(token).first<{ team_member_id: string; user_id: string; used: number; expires_at: string }>();
+    'SELECT team_member_id, user_id FROM magic_tokens WHERE token = ?',
+  ).bind(token).first<{ team_member_id: string; user_id: string }>();
 
   if (!row) return c.json({ error: 'token_expired_or_invalid' }, 401);
-  if (row.used) return c.json({ error: 'token_already_used' }, 401);
-
-  // Mark token as used
-  await c.env.DB.prepare('UPDATE magic_tokens SET used = 1 WHERE token = ?').bind(token).run();
 
   // Create session
   const sessionToken = crypto.randomUUID();

@@ -31,7 +31,7 @@ import Layout from '../../layouts/Layout.astro';
     } else {
       (async () => {
         try {
-          const res = await fetch(`/v1/auth/magic/${token}`, { credentials: 'include' });
+          const res = await fetch(`/v1/auth/magic/${token}`, { method: 'POST', credentials: 'include' });
           if (res.ok) {
             status.textContent = 'Success! Redirecting...';
             setTimeout(() => { window.location.href = '/reports'; }, 500);
