@@ -14,6 +14,7 @@ import { BugReportModal } from './BugReportModal';
 import { freezeStateSnapshot, clearStateCapture } from './StateCapture';
 import { freezeNavHistory, clearNavHistory, getCurrentPathname } from './NavigationTracker';
 import { clearLastError } from './ErrorBoundary';
+import { startConsoleCapture, stopConsoleCapture, clearConsoleLogs } from './ConsoleCapture';
 import type { Integration, BugReport } from './integrations/types';
 import { getExpoPushToken } from './PushToken';
 
@@ -61,6 +62,12 @@ export function BugReportProvider({
     getExpoPushToken().catch(() => {});
   }, []);
 
+  // Start console capture on mount, stop on unmount
+  useEffect(() => {
+    startConsoleCapture();
+    return () => stopConsoleCapture();
+  }, []);
+
   // Auto-detect screen name from NavigationTracker if no provider given
   const resolvedScreenNameProvider = useCallback(() => {
     if (screenNameProvider) return screenNameProvider();
@@ -94,6 +101,7 @@ export function BugReportProvider({
     clearStateCapture();
     clearNavHistory();
     clearLastError();
+    clearConsoleLogs();
   }, []);
 
   useShakeDetector(triggerBugReport, {

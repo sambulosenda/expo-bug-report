@@ -45,7 +45,7 @@
 **Added:** 2026-03-29 via /plan-eng-review (CEO review expansion deferred)
 
 ## Token validation on integration setup
-**Status:** IN SCOPE (Phase 2)
+**Status:** DONE
 **Priority:** P1
 **What:** When a user configures a Linear/GitHub/Jira integration via `POST /v1/integrations`, proxy makes a test API call to validate the token before saving.
 **Why:** Without validation, users discover bad tokens only when their first bug report fails to create an issue. Bad UX for a paid feature.
@@ -104,7 +104,7 @@
 **Added:** 2026-03-29 via /plan-eng-review (outside voice finding)
 
 ## Separate screenshot upload endpoint
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **What:** SDK uploads screenshot to a dedicated `POST /v1/screenshots` endpoint first, gets back an ID. Then sends the report (small JSON) with the screenshot ID instead of base64 payload.
 **Why:** Base64 screenshots can be 3-4MB. Combined with R2 upload and integration API calls on the proxy side, this regularly exceeds the 5s SDK timeout on slow connections, triggering the fallback path. Separating upload from report submission keeps the report request fast.
@@ -134,7 +134,7 @@
 **Added:** 2026-03-30 via /plan-ceo-review (deferred from Phase 2 expansion)
 
 ## Stripe payment failure grace period
-**Status:** TODO
+**Status:** DONE
 **Priority:** P1
 **What:** When a card declines on renewal, don't immediately lock out. Add 7-day grace period with features still working but banner shown in CLI/issue links.
 **Why:** Immediate lockout on payment failure is hostile UX. Standard SaaS practice is 7-day grace period. Prevents churn from temporary card issues.

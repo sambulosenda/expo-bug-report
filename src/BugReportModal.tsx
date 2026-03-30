@@ -17,6 +17,7 @@ import { collectDeviceInfo } from './DeviceInfo';
 import { getStateSnapshot } from './StateCapture';
 import { getNavHistory } from './NavigationTracker';
 import { getLastError } from './ErrorBoundary';
+import { getConsoleLogs } from './ConsoleCapture';
 import { generateReproSteps } from './ReproSteps';
 import { detectSeverity } from './Severity';
 import { useThemeColors } from './useThemeColors';
@@ -148,6 +149,7 @@ export function BugReportModal({
       stateSnapshots: getStateSnapshot(),
       navHistory: getNavHistory(),
       lastError: getLastError(),
+      consoleLogs: getConsoleLogs(),
     };
     const trimmedDesc = description.trim();
 
