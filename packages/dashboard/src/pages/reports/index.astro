@@ -7,6 +7,8 @@ import Layout from '../../layouts/Layout.astro';
     <h1>BugPulse</h1>
     <div style="display:flex;gap:8px;align-items:center;">
       <a href="/team" class="btn" id="team-link">Team</a>
+      <a href="/integrations" class="btn">Integrations</a>
+      <a href="https://sambulosenda.github.io/expo-bug-report/" class="btn" target="_blank" rel="noopener">Docs</a>
       <button class="btn" id="refresh-btn">Refresh</button>
       <button class="btn" id="logout-btn">Logout</button>
     </div>
@@ -104,23 +106,23 @@ npx @bugpulse/cli init</code></pre>
       border-radius: var(--radius);
       margin-bottom: 8px;
       cursor: pointer;
-      transition: border-color 0.15s;
+      transition: border-color 150ms ease-out, transform 75ms ease-out;
       text-decoration: none;
       color: inherit;
     }
-    .report-card:hover { border-color: var(--accent); }
+    .report-card:hover { border-color: var(--accent); transform: translateY(-1px); }
     .report-card.new-report {
       animation: highlight 2s ease;
     }
 
     @keyframes highlight {
-      0% { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+      0% { border-color: var(--accent); background: var(--accent-muted); }
       100% { border-color: var(--border); background: var(--surface); }
     }
 
     .report-screen {
-      font-family: monospace;
-      font-size: 13px;
+      font-family: var(--font-mono);
+      font-size: 12px;
       color: var(--text-muted);
     }
     .report-desc {
@@ -161,10 +163,12 @@ npx @bugpulse/cli init</code></pre>
       border-radius: var(--radius) 0 0 var(--radius);
     }
     .stat-number {
+      font-family: var(--font-display);
       font-size: 24px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text);
       line-height: 1.2;
+      font-variant-numeric: tabular-nums;
     }
     .stat-label {
       font-size: 12px;
@@ -240,14 +244,14 @@ npx @bugpulse/cli init</code></pre>
     }
     .screen-pill {
       padding: 4px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-family: monospace;
+      border-radius: var(--radius);
+      font-size: 11px;
+      font-family: var(--font-mono);
       background: var(--surface);
       border: 1px solid var(--border);
       color: var(--text-muted);
       cursor: pointer;
-      transition: 0.15s;
+      transition: border-color 150ms ease-out, color 150ms ease-out;
     }
     .screen-pill:hover {
       border-color: var(--accent);
@@ -256,7 +260,17 @@ npx @bugpulse/cli init</code></pre>
     .screen-pill-count {
       color: var(--accent);
       margin-left: 4px;
-      font-family: -apple-system, sans-serif;
+      font-family: var(--font-body);
+    }
+    .screen-pill-active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: var(--accent-muted);
+    }
+    .screen-pill-clear {
+      color: var(--text-muted);
+      font-family: var(--font-body);
+      font-style: italic;
     }
 
     @media (max-width: 640px) {
@@ -361,6 +375,9 @@ npx @bugpulse/cli init</code></pre>
             pill.appendChild(count);
 
             pill.addEventListener('click', () => {
+              // Highlight active pill
+              topScreensEl.querySelectorAll('.screen-pill').forEach((p: Element) => p.classList.remove('screen-pill-active'));
+              pill.classList.add('screen-pill-active');
               // Filter reports to this screen
               const sev = severityFilter.value;
               const stat = statusFilter.value;
@@ -377,6 +394,16 @@ npx @bugpulse/cli init</code></pre>
 
             fragment.appendChild(pill);
           }
+
+          const clearPill = document.createElement('span');
+          clearPill.className = 'screen-pill screen-pill-clear';
+          clearPill.textContent = 'Show all';
+          clearPill.addEventListener('click', () => {
+            topScreensEl.querySelectorAll('.screen-pill').forEach((p: Element) => p.classList.remove('screen-pill-active'));
+            renderReports();
+          });
+          fragment.appendChild(clearPill);
+
           topScreensEl.replaceChildren(fragment);
         }
 

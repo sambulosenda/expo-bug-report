@@ -18,6 +18,7 @@ import Layout from '../layouts/Layout.astro';
         <a href="#features">Features</a>
         <a href="#how-it-works">How it Works</a>
         <a href="#pricing">Pricing</a>
+        <a href="https://sambulosenda.github.io/expo-bug-report/" target="_blank" rel="noopener">Docs</a>
         <a href="/login" class="btn btn-ghost">Dashboard</a>
         <a href="#get-started" class="btn btn-primary">Get Started</a>
       </div>
@@ -392,6 +393,7 @@ import Layout from '../layouts/Layout.astro';
         </div>
         <div class="footer-col">
           <h4>Resources</h4>
+          <a href="https://sambulosenda.github.io/expo-bug-report/" target="_blank" rel="noopener">Documentation</a>
           <a href="https://github.com/sambulosenda/expo-bug-report" target="_blank" rel="noopener">GitHub</a>
           <a href="https://www.npmjs.com/package/@bugpulse/react-native" target="_blank" rel="noopener">npm</a>
         </div>
@@ -412,7 +414,7 @@ import Layout from '../layouts/Layout.astro';
       position: sticky;
       top: 0;
       z-index: 50;
-      background: rgba(15, 17, 23, 0.85);
+      background: rgba(26, 24, 20, 0.85);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
@@ -427,12 +429,14 @@ import Layout from '../layouts/Layout.astro';
       justify-content: space-between;
     }
     .nav-logo {
+      font-family: var(--font-display);
       font-size: 18px;
       font-weight: 700;
       color: var(--text);
       display: flex;
       align-items: center;
       gap: 8px;
+      letter-spacing: -0.01em;
     }
     .nav-logo:hover { color: var(--text); }
     .logo-dot {
@@ -453,9 +457,10 @@ import Layout from '../layouts/Layout.astro';
       gap: 24px;
     }
     .nav-links a:not(.btn) {
-      font-size: 14px;
+      font-family: var(--font-body);
+      font-size: 13px;
       color: var(--text-muted);
-      transition: color 0.15s;
+      transition: color 150ms ease-out;
     }
     .nav-links a:not(.btn):hover { color: var(--text); }
     .nav-toggle-input { display: none; }
@@ -498,19 +503,22 @@ import Layout from '../layouts/Layout.astro';
     .hero-eyebrow {
       display: inline-block;
       padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 13px;
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 12px;
       font-weight: 500;
       color: var(--accent);
-      background: rgba(99, 102, 241, 0.1);
+      background: var(--accent-muted);
       animation: fadeUp 0.5s ease both;
     }
     .hero-headline {
+      font-family: var(--font-display);
       font-size: 48px;
       font-weight: 700;
       line-height: 1.1;
+      letter-spacing: -0.03em;
       margin: 20px 0 16px;
-      color: #fff;
+      color: var(--text);
       animation: fadeUp 0.5s ease 0.1s both;
     }
     .accent-underline {
@@ -520,7 +528,8 @@ import Layout from '../layouts/Layout.astro';
       background-repeat: no-repeat;
     }
     .hero-subtitle {
-      font-size: 18px;
+      font-family: var(--font-body);
+      font-size: 17px;
       color: var(--text-muted);
       line-height: 1.6;
       max-width: 480px;
@@ -584,7 +593,7 @@ import Layout from '../layouts/Layout.astro';
       text-transform: uppercase;
     }
     .mock-badge-error {
-      background: rgba(234, 179, 8, 0.15);
+      background: rgba(232, 160, 46, 0.15);
       color: var(--yellow);
     }
     .mock-time { font-size: 11px; color: var(--text-muted); }
@@ -600,7 +609,7 @@ import Layout from '../layouts/Layout.astro';
     .mock-screenshot-inner {
       width: 100%;
       height: 100%;
-      background: linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(99,102,241,0.02) 100%);
+      background: linear-gradient(135deg, rgba(232,107,46,0.05) 0%, rgba(232,107,46,0.02) 100%);
     }
     .mock-annotation {
       position: absolute;
@@ -625,27 +634,27 @@ import Layout from '../layouts/Layout.astro';
       margin-bottom: 4px;
     }
     .mock-code {
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: var(--font-mono);
       font-size: 10px;
       line-height: 1.5;
       color: var(--text-muted);
       background: var(--surface);
-      border-radius: 6px;
+      border-radius: var(--radius);
       padding: 8px;
       overflow: hidden;
     }
     .mock-nav-item {
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 11px;
       color: var(--text-muted);
     }
 
     /* ===== Syntax Colors ===== */
-    .tk-key { color: #818cf8; }
-    .tk-str { color: #22c55e; }
-    .tk-num { color: #eab308; }
-    .tk-kw { color: #c084fc; }
-    .tk-type { color: #818cf8; }
+    .tk-key { color: var(--accent); }
+    .tk-str { color: var(--green); }
+    .tk-num { color: var(--yellow); }
+    .tk-kw { color: var(--info); }
+    .tk-type { color: var(--accent); }
 
     /* ===== Logos ===== */
     .logos {
@@ -684,16 +693,19 @@ import Layout from '../layouts/Layout.astro';
     }
     .section-eyebrow {
       display: block;
-      font-size: 12px;
+      font-family: var(--font-display);
+      font-size: 10px;
       text-transform: uppercase;
-      letter-spacing: 1.5px;
+      letter-spacing: 0.12em;
       color: var(--accent);
       margin-bottom: 8px;
     }
     .section-title {
+      font-family: var(--font-display);
       font-size: 36px;
       font-weight: 700;
-      color: #fff;
+      letter-spacing: -0.02em;
+      color: var(--text);
       margin-bottom: 12px;
     }
     .section-subtitle {
@@ -734,11 +746,12 @@ import Layout from '../layouts/Layout.astro';
       width: 28px;
       height: 28px;
       background: var(--accent);
-      color: #fff;
+      color: #1A1814;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-family: var(--font-display);
       font-size: 13px;
       font-weight: 700;
       margin: 0 auto 16px;
@@ -750,7 +763,7 @@ import Layout from '../layouts/Layout.astro';
     .step h3 {
       font-size: 16px;
       margin-bottom: 8px;
-      color: #fff;
+      color: var(--text);
     }
     .step p {
       font-size: 14px;
@@ -780,7 +793,7 @@ import Layout from '../layouts/Layout.astro';
     .feature-text h3 {
       font-size: 24px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text);
       margin-bottom: 8px;
     }
     .feature-text > p {
@@ -808,9 +821,9 @@ import Layout from '../layouts/Layout.astro';
 
     /* ===== Code Window ===== */
     .code-window {
-      background: #0a0c10;
+      background: var(--inset);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius);
       overflow: hidden;
     }
     .code-titlebar {
@@ -836,7 +849,7 @@ import Layout from '../layouts/Layout.astro';
     }
     .code-body {
       padding: 20px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
       line-height: 1.7;
       color: var(--text);
@@ -871,7 +884,7 @@ import Layout from '../layouts/Layout.astro';
     .routing-hub {
       background: var(--accent);
       border-color: var(--accent);
-      color: #fff;
+      color: var(--text);
     }
     .routing-destinations {
       display: flex;
@@ -933,7 +946,7 @@ import Layout from '../layouts/Layout.astro';
     .mini-badge {
       padding: 1px 6px;
       border-radius: 8px;
-      background: rgba(234, 179, 8, 0.15);
+      background: rgba(232, 160, 46, 0.15);
       color: var(--yellow) !important;
       font-weight: 600;
     }
@@ -954,7 +967,7 @@ import Layout from '../layouts/Layout.astro';
     .code-section-copy h2 {
       font-size: 28px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text);
       margin-bottom: 8px;
     }
     .code-section-copy p {
@@ -988,20 +1001,20 @@ import Layout from '../layouts/Layout.astro';
     .pricing-card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius);
       padding: 32px;
       display: flex;
       flex-direction: column;
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: transform 75ms ease-out, box-shadow 150ms ease-out;
       position: relative;
     }
     .pricing-card:hover {
-      transform: translateY(-2px);
+      transform: translateY(-1px);
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
     }
     .pricing-card-popular {
       border-color: var(--accent);
-      box-shadow: 0 0 0 1px var(--accent), 0 8px 24px rgba(99, 102, 241, 0.12);
+      box-shadow: 0 0 0 1px var(--accent), 0 8px 24px rgba(232, 107, 46, 0.12);
     }
     .pricing-popular-badge {
       position: absolute;
@@ -1009,23 +1022,29 @@ import Layout from '../layouts/Layout.astro';
       left: 50%;
       transform: translateX(-50%);
       background: var(--accent);
-      color: #fff;
-      font-size: 12px;
+      color: #1A1814;
+      font-family: var(--font-display);
+      font-size: 11px;
       font-weight: 600;
       padding: 4px 14px;
-      border-radius: 20px;
+      border-radius: 9999px;
     }
     .pricing-tier-name {
-      font-size: 16px;
+      font-family: var(--font-display);
+      font-size: 14px;
       font-weight: 600;
       color: var(--text-muted);
       margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
     .pricing-price {
+      font-family: var(--font-display);
       font-size: 42px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text);
       margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
     }
     .pricing-price span {
       font-size: 16px;
@@ -1059,7 +1078,7 @@ import Layout from '../layouts/Layout.astro';
     /* ===== Signup ===== */
     .signup-section {
       padding: 80px 0;
-      background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+      background: radial-gradient(ellipse at center, rgba(232, 107, 46, 0.06) 0%, transparent 70%);
     }
     .signup-box {
       max-width: 520px;
@@ -1069,7 +1088,7 @@ import Layout from '../layouts/Layout.astro';
     .signup-box h2 {
       font-size: 28px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text);
       margin-bottom: 8px;
     }
     .signup-box > p {
@@ -1123,7 +1142,7 @@ import Layout from '../layouts/Layout.astro';
       margin-bottom: 2px;
     }
     .result-value {
-      font-family: 'SF Mono', monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
       color: var(--accent);
     }

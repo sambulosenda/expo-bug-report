@@ -13,28 +13,43 @@ const { title } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title} - BugPulse</title>
     <script is:inline src="/config.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet">
     <style is:global>
       * { margin: 0; padding: 0; box-sizing: border-box; }
 
       :root {
-        --bg: #0f1117;
-        --surface: #1a1d27;
-        --border: #2a2d3a;
-        --text: #e4e4e7;
-        --text-muted: #71717a;
-        --accent: #6366f1;
-        --accent-hover: #818cf8;
-        --green: #22c55e;
-        --yellow: #eab308;
-        --red: #ef4444;
-        --radius: 8px;
+        --bg: #1A1814;
+        --surface: #242019;
+        --surface-hover: #2E2A22;
+        --inset: #141210;
+        --border: #3D372F;
+        --border-subtle: #2E2A2233;
+        --text: #E8E0D4;
+        --text-muted: #9B9183;
+        --text-ghost: #5C554B;
+        --accent: #E86B2E;
+        --accent-hover: #F07A3E;
+        --accent-muted: #E86B2E26;
+        --green: #5BA865;
+        --yellow: #E8A02E;
+        --red: #D94B4B;
+        --info: #5B8FA8;
+        --radius: 4px;
+        --font-display: 'Space Grotesk', sans-serif;
+        --font-body: 'General Sans', sans-serif;
+        --font-mono: 'JetBrains Mono', monospace;
       }
 
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: var(--font-body);
         background: var(--bg);
         color: var(--text);
         line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
       a { color: var(--accent); text-decoration: none; }
@@ -51,13 +66,15 @@ const { title } = Astro.props;
         justify-content: space-between;
         align-items: center;
         padding: 16px 24px;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border-subtle);
         background: var(--surface);
       }
 
       .header h1 {
+        font-family: var(--font-display);
         font-size: 18px;
         font-weight: 600;
+        letter-spacing: -0.01em;
       }
 
       .btn {
@@ -69,34 +86,37 @@ const { title } = Astro.props;
         border: 1px solid var(--border);
         background: var(--surface);
         color: var(--text);
-        font-size: 14px;
+        font-family: var(--font-display);
+        font-size: 13px;
+        font-weight: 500;
         cursor: pointer;
-        transition: background 0.15s;
+        transition: transform 75ms ease-out, box-shadow 150ms ease-out, background 150ms ease-out;
       }
-      .btn:hover { background: var(--border); }
+      .btn:hover { background: var(--surface-hover); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
       .btn-primary {
         background: var(--accent);
         border-color: var(--accent);
-        color: white;
+        color: #1A1814;
       }
       .btn-primary:hover { background: var(--accent-hover); }
 
       .badge {
         display: inline-block;
         padding: 2px 8px;
-        border-radius: 12px;
-        font-size: 11px;
-        font-weight: 600;
+        border-radius: var(--radius);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.08em;
       }
-      .badge-crash { background: rgba(239, 68, 68, 0.15); color: var(--red); }
-      .badge-error { background: rgba(234, 179, 8, 0.15); color: var(--yellow); }
-      .badge-feedback { background: rgba(99, 102, 241, 0.15); color: var(--accent); }
+      .badge-crash { background: rgba(217, 75, 75, 0.15); color: var(--red); }
+      .badge-error { background: rgba(232, 160, 46, 0.15); color: var(--yellow); }
+      .badge-feedback { background: rgba(232, 107, 46, 0.15); color: var(--accent); }
 
-      .badge-new { background: rgba(99, 102, 241, 0.15); color: var(--accent); }
-      .badge-triaged { background: rgba(234, 179, 8, 0.15); color: var(--yellow); }
-      .badge-fixed { background: rgba(34, 197, 94, 0.15); color: var(--green); }
+      .badge-new { background: rgba(232, 107, 46, 0.15); color: var(--accent); }
+      .badge-triaged { background: rgba(232, 160, 46, 0.15); color: var(--yellow); }
+      .badge-fixed { background: rgba(91, 168, 101, 0.15); color: var(--green); }
 
       .card {
         background: var(--surface);
@@ -109,13 +129,16 @@ const { title } = Astro.props;
         padding: 8px 12px;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background: var(--bg);
+        background: var(--inset);
         color: var(--text);
-        font-size: 14px;
+        font-family: var(--font-body);
+        font-size: 13px;
+        transition: transform 75ms ease-out, border-color 150ms ease-out;
       }
       input:focus, select:focus {
         outline: none;
         border-color: var(--accent);
+        transform: translateY(1px);
       }
 
       .toast {
@@ -126,9 +149,10 @@ const { title } = Astro.props;
         border-radius: var(--radius);
         background: var(--surface);
         border: 1px solid var(--border);
-        font-size: 14px;
+        font-family: var(--font-body);
+        font-size: 13px;
         z-index: 100;
-        animation: slideIn 0.3s ease;
+        animation: slideIn 0.3s ease-out;
       }
       .toast-success { border-color: var(--green); }
       .toast-error { border-color: var(--red); }

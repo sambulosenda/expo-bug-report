@@ -1,0 +1,325 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Integrations">
+  <header class="header">
+    <h1>BugPulse</h1>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <a href="/reports" class="btn">Reports</a>
+      <a href="/team" class="btn">Team</a>
+      <a href="/integrations" class="btn" style="border-color:var(--accent);color:var(--accent);">Integrations</a>
+      <a href="https://sambulosenda.github.io/expo-bug-report/" class="btn" target="_blank" rel="noopener">Docs</a>
+      <button class="btn" id="logout-btn">Logout</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card" style="margin-bottom:24px;">
+      <h2 style="font-size:16px;margin-bottom:12px;">Connect Integration</h2>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+        Bug reports will automatically create issues in your connected tracker.
+      </p>
+      <form id="add-form">
+        <div style="margin-bottom:12px;">
+          <select id="type-select" style="width:100%;">
+            <option value="">Select integration...</option>
+            <option value="linear">Linear</option>
+            <option value="github">GitHub Issues</option>
+            <option value="jira">Jira</option>
+          </select>
+        </div>
+        <div id="config-fields"></div>
+        <button type="submit" class="btn btn-primary" id="add-btn" disabled>Connect</button>
+      </form>
+    </div>
+
+    <div id="integration-list"></div>
+    <div id="empty-state" class="empty-state" hidden>
+      <h2 style="font-size:18px;margin-bottom:8px;">No integrations yet</h2>
+      <p style="color:var(--text-muted);font-size:14px;">Connect your issue tracker above so bug reports create issues automatically.</p>
+    </div>
+  </div>
+
+  <style>
+    .integration-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+    }
+    .integration-type {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .integration-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .badge-enabled { background: rgba(91, 168, 101, 0.15); color: var(--green); }
+    .badge-disabled { background: rgba(92, 85, 75, 0.15); color: var(--text-muted); }
+    .btn-danger {
+      background: transparent;
+      border-color: var(--red);
+      color: var(--red);
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+    .btn-danger:hover { background: rgba(217, 75, 75, 0.15); }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    .empty-state { text-align: center; padding: 80px 20px; }
+    .config-field {
+      margin-bottom: 10px;
+    }
+    .config-field label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .config-field input {
+      width: 100%;
+    }
+    .type-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .type-linear { background: var(--accent-muted); color: var(--accent); }
+    .type-github { background: rgba(232, 224, 212, 0.1); color: var(--text); }
+    .type-jira { background: rgba(91, 143, 168, 0.15); color: var(--info); }
+  </style>
+
+  <script>
+    const integrationList = document.getElementById('integration-list') as HTMLDivElement;
+    const emptyState = document.getElementById('empty-state') as HTMLDivElement;
+    const addForm = document.getElementById('add-form') as HTMLFormElement;
+    const typeSelect = document.getElementById('type-select') as HTMLSelectElement;
+    const configFields = document.getElementById('config-fields') as HTMLDivElement;
+    const addBtn = document.getElementById('add-btn') as HTMLButtonElement;
+    const logoutBtn = document.getElementById('logout-btn') as HTMLButtonElement;
+
+    if (!window.__bp.isLoggedIn()) {
+      window.location.href = '/login';
+    }
+
+    const FIELD_CONFIG: Record<string, Array<{ key: string; label: string; placeholder: string; type?: string }>> = {
+      linear: [
+        { key: 'api_key', label: 'API Key', placeholder: 'lin_api_...' },
+        { key: 'team_id', label: 'Team ID', placeholder: 'TEAM-123' },
+      ],
+      github: [
+        { key: 'token', label: 'Personal Access Token', placeholder: 'ghp_...' },
+        { key: 'owner', label: 'Repository Owner', placeholder: 'myorg' },
+        { key: 'repo', label: 'Repository Name', placeholder: 'my-app' },
+      ],
+      jira: [
+        { key: 'token', label: 'API Token', placeholder: 'Your Jira API token' },
+        { key: 'email', label: 'Email', placeholder: 'you@company.com' },
+        { key: 'domain', label: 'Domain', placeholder: 'mycompany.atlassian.net' },
+        { key: 'project_key', label: 'Project Key', placeholder: 'BUG' },
+      ],
+    };
+
+    function showToast(message: string, type: 'success' | 'error') {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    typeSelect.addEventListener('change', () => {
+      const type = typeSelect.value;
+      configFields.replaceChildren();
+      addBtn.disabled = !type;
+
+      if (!type) return;
+
+      const fields = FIELD_CONFIG[type] || [];
+      for (const f of fields) {
+        const div = document.createElement('div');
+        div.className = 'config-field';
+
+        const label = document.createElement('label');
+        label.textContent = f.label;
+        label.setAttribute('for', `field-${f.key}`);
+
+        const input = document.createElement('input');
+        input.type = f.type || 'text';
+        input.id = `field-${f.key}`;
+        input.name = f.key;
+        input.placeholder = f.placeholder;
+        input.required = true;
+
+        div.appendChild(label);
+        div.appendChild(input);
+        configFields.appendChild(div);
+      }
+    });
+
+    let integrations: Array<{ id: string; type: string; enabled: boolean; created_at: string }> = [];
+
+    function renderIntegrations() {
+      if (integrations.length === 0) {
+        integrationList.replaceChildren();
+        emptyState.hidden = false;
+        return;
+      }
+      emptyState.hidden = true;
+      const fragment = document.createDocumentFragment();
+      for (const ig of integrations) {
+        const row = document.createElement('div');
+        row.className = 'integration-row';
+
+        const typeBadge = document.createElement('span');
+        typeBadge.className = `type-badge type-${ig.type}`;
+        typeBadge.textContent = ig.type;
+
+        const name = document.createElement('span');
+        name.className = 'integration-type';
+        const names: Record<string, string> = { linear: 'Linear', github: 'GitHub Issues', jira: 'Jira' };
+        name.textContent = names[ig.type] || ig.type;
+
+        const status = document.createElement('span');
+        status.className = `badge ${ig.enabled ? 'badge-enabled' : 'badge-disabled'}`;
+        status.textContent = ig.enabled ? 'active' : 'disabled';
+
+        const date = document.createElement('span');
+        date.className = 'integration-date';
+        date.textContent = new Date(ig.created_at).toLocaleDateString();
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;';
+
+        const healthBtn = document.createElement('button');
+        healthBtn.className = 'btn btn-sm';
+        healthBtn.textContent = 'Check Health';
+        healthBtn.addEventListener('click', () => handleHealth(ig.id));
+        actions.appendChild(healthBtn);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn btn-danger btn-sm';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', () => handleRemove(ig.id, ig.type));
+        actions.appendChild(removeBtn);
+
+        row.appendChild(typeBadge);
+        row.appendChild(name);
+        row.appendChild(status);
+        row.appendChild(date);
+        row.appendChild(actions);
+        fragment.appendChild(row);
+      }
+      integrationList.replaceChildren(fragment);
+    }
+
+    async function fetchIntegrations() {
+      try {
+        const res = await window.__bp.fetch('/v1/integrations');
+        if (res.status === 401) { window.location.href = '/login'; return; }
+        if (!res.ok) return;
+        const data = await res.json() as { integrations: typeof integrations };
+        integrations = data.integrations || [];
+        renderIntegrations();
+      } catch {
+        showToast('Failed to load integrations', 'error');
+      }
+    }
+
+    addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const type = typeSelect.value;
+      if (!type) return;
+
+      const fields = FIELD_CONFIG[type] || [];
+      const config: Record<string, string> = {};
+      for (const f of fields) {
+        const input = document.getElementById(`field-${f.key}`) as HTMLInputElement;
+        if (!input.value.trim()) {
+          showToast(`${f.label} is required`, 'error');
+          return;
+        }
+        config[f.key] = input.value.trim();
+      }
+
+      addBtn.disabled = true;
+      addBtn.textContent = 'Connecting...';
+
+      try {
+        const res = await window.__bp.fetch('/v1/integrations', {
+          method: 'POST',
+          body: JSON.stringify({ type, config }),
+        });
+
+        const data = await res.json() as { id?: string; error?: string; details?: string[] };
+
+        if (!res.ok) {
+          if (data.error === 'invalid_token') {
+            showToast('Token validation failed. Check your credentials.', 'error');
+          } else {
+            showToast(data.details?.[0] || data.error || 'Failed to connect', 'error');
+          }
+          return;
+        }
+
+        showToast(`${type} connected!`, 'success');
+        typeSelect.value = '';
+        configFields.replaceChildren();
+        await fetchIntegrations();
+      } catch {
+        showToast('Network error. Check your connection.', 'error');
+      } finally {
+        addBtn.disabled = false;
+        addBtn.textContent = 'Connect';
+      }
+    });
+
+    async function handleHealth(id: string) {
+      try {
+        const res = await window.__bp.fetch(`/v1/integrations/${id}/health`);
+        const data = await res.json() as { healthy?: boolean; error?: string };
+        if (data.healthy) {
+          showToast('Integration is healthy!', 'success');
+        } else {
+          showToast(`Health check failed: ${data.error || 'unknown error'}`, 'error');
+        }
+      } catch {
+        showToast('Failed to check health', 'error');
+      }
+    }
+
+    async function handleRemove(id: string, type: string) {
+      if (!confirm(`Remove ${type} integration?`)) return;
+      try {
+        const res = await window.__bp.fetch(`/v1/integrations/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast(`${type} integration removed`, 'success');
+          await fetchIntegrations();
+        } else {
+          showToast('Failed to remove integration', 'error');
+        }
+      } catch {
+        showToast('Network error', 'error');
+      }
+    }
+
+    logoutBtn.addEventListener('click', async () => {
+      await window.__bp.fetch('/v1/auth/logout', { method: 'POST' });
+      window.__bp.logout();
+      window.location.href = '/login';
+    });
+
+    fetchIntegrations();
+  </script>
+</Layout>

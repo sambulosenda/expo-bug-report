@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BugPulse Dashboard</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ========== DESIGN TOKENS ========== */
+    :root {
+      /* Dark mode (primary) */
+      --bg-root: #1A1814;
+      --bg-surface: #242019;
+      --bg-surface-hover: #2E2A22;
+      --bg-inset: #141210;
+      --text-primary: #E8E0D4;
+      --text-secondary: #9B9183;
+      --text-ghost: #5C554B;
+      --accent: #E86B2E;
+      --accent-hover: #F07A3E;
+      --accent-muted: #E86B2E26;
+      --critical: #D94B4B;
+      --warning: #E8A02E;
+      --success: #5BA865;
+      --info: #5B8FA8;
+      --border-subtle: #2E2A2233;
+      --border-visible: #3D372F;
+
+      /* Typography */
+      --font-display: 'Space Grotesk', sans-serif;
+      --font-body: 'General Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      /* Spacing */
+      --sp-2xs: 2px;
+      --sp-xs: 4px;
+      --sp-sm: 8px;
+      --sp-md: 16px;
+      --sp-lg: 24px;
+      --sp-xl: 32px;
+      --sp-2xl: 48px;
+      --sp-3xl: 64px;
+
+      /* Radius */
+      --radius-sm: 2px;
+      --radius-md: 4px;
+      --radius-lg: 8px;
+
+      /* Motion */
+      --duration-micro: 75ms;
+      --duration-short: 150ms;
+      --duration-medium: 300ms;
+      --ease-enter: ease-out;
+      --ease-exit: ease-in;
+      --ease-move: ease-in-out;
+
+      /* Layout */
+      --nav-rail-width: 48px;
+      --nav-rail-expanded: 200px;
+    }
+
+    /* Light mode */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-root: #F5F0EA;
+        --bg-surface: #FFFFFF;
+        --bg-surface-hover: #F0EBE4;
+        --bg-inset: #E8E3DC;
+        --text-primary: #1A1814;
+        --text-secondary: #6B6358;
+        --text-ghost: #9B9183;
+        --border-subtle: #D4CFC833;
+        --border-visible: #C4BFB8;
+      }
+    }
+
+    /* ========== RESET ========== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-root);
+      color: var(--text-primary);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      /* Subtle noise grain */
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ========== NAV RAIL ========== */
+    .nav-rail {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: var(--nav-rail-width);
+      background: var(--bg-inset);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: var(--sp-md) 0;
+      gap: var(--sp-xs);
+      z-index: 100;
+      transition: width var(--duration-medium) var(--ease-move);
+      overflow: hidden;
+    }
+
+    .nav-rail:hover {
+      width: var(--nav-rail-expanded);
+    }
+
+    .nav-rail-logo {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: var(--sp-lg);
+      flex-shrink: 0;
+    }
+
+    .nav-rail-logo svg {
+      width: 20px;
+      height: 20px;
+      fill: var(--accent);
+    }
+
+    .nav-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-sm);
+      padding: var(--sp-sm) var(--sp-md);
+      border-radius: var(--radius-md);
+      color: var(--text-ghost);
+      transition: color var(--duration-short) var(--ease-enter),
+                  background var(--duration-short) var(--ease-enter);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .nav-item:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface-hover);
+    }
+
+    .nav-item.active {
+      color: var(--accent);
+      background: var(--accent-muted);
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .nav-item-label {
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity var(--duration-short) var(--ease-enter);
+    }
+
+    .nav-rail:hover .nav-item-label {
+      opacity: 1;
+    }
+
+    .nav-spacer { flex: 1; }
+
+    /* ========== MAIN LAYOUT ========== */
+    .main {
+      margin-left: var(--nav-rail-width);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ========== TOP BAR ========== */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--sp-md) var(--sp-xl);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .topbar-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-sm);
+    }
+
+    .topbar-search {
+      background: var(--bg-inset);
+      border: 1px solid var(--border-visible);
+      border-radius: var(--radius-md);
+      padding: 6px 12px;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 13px;
+      width: 220px;
+      outline: none;
+      transition: transform var(--duration-micro) var(--ease-enter),
+                  border-color var(--duration-short) var(--ease-enter);
+    }
+
+    .topbar-search:focus {
+      border-color: var(--accent);
+      transform: translateY(1px);
+    }
+
+    .topbar-search::placeholder {
+      color: var(--text-ghost);
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 9999px;
+      background: var(--accent-muted);
+      border: 1px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    /* ========== DASHBOARD CONTENT ========== */
+    .dashboard {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: var(--sp-xl);
+      padding: var(--sp-xl);
+      max-width: 1400px;
+    }
+
+    /* ========== BUG FEED (left 60%) ========== */
+    .feed-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-md);
+    }
+
+    .section-label {
+      font-family: var(--font-display);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-ghost);
+      padding-bottom: var(--sp-sm);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .feed-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .feed-title {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .feed-filter {
+      font-family: var(--font-body);
+      font-size: 13px;
+      color: var(--text-ghost);
+      cursor: pointer;
+      transition: color var(--duration-short) var(--ease-enter);
+    }
+
+    .feed-filter:hover { color: var(--text-secondary); }
+
+    /* Bug cards */
+    .bug-card {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: var(--sp-md);
+      padding: var(--sp-md);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-visible);
+      border-radius: var(--radius-md);
+      transition: transform var(--duration-micro) var(--ease-enter),
+                  border-color var(--duration-short) var(--ease-enter);
+      cursor: pointer;
+      animation: slideInLeft var(--duration-medium) var(--ease-enter) both;
+    }
+
+    .bug-card:nth-child(2) { animation-delay: 150ms; }
+    .bug-card:nth-child(3) { animation-delay: 300ms; }
+    .bug-card:nth-child(4) { animation-delay: 450ms; }
+
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-12px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .bug-card:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+    }
+
+    .bug-card-thumb {
+      width: 100px;
+      height: 68px;
+      background: var(--bg-inset);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-ghost);
+      position: relative;
+    }
+
+    .bug-card-thumb-content {
+      position: absolute;
+      inset: 4px;
+      border: 1px solid var(--border-visible);
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-direction: column;
+      padding: 4px;
+      gap: 2px;
+      overflow: hidden;
+    }
+
+    .thumb-line {
+      height: 2px;
+      background: var(--text-ghost);
+      opacity: 0.3;
+      border-radius: 1px;
+    }
+
+    .thumb-line:nth-child(1) { width: 70%; }
+    .thumb-line:nth-child(2) { width: 50%; }
+    .thumb-line:nth-child(3) { width: 85%; }
+    .thumb-line:nth-child(4) { width: 40%; }
+    .thumb-line.accent { background: var(--critical); opacity: 0.6; }
+
+    .bug-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+      min-width: 0;
+    }
+
+    .bug-card-title {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.3;
+    }
+
+    .bug-card-meta {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-sm);
+      font-size: 12px;
+      color: var(--text-ghost);
+    }
+
+    .bug-card-author {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .bug-card-time {
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .severity-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 9999px;
+      flex-shrink: 0;
+    }
+
+    .severity-critical { background: var(--critical); }
+    .severity-warning { background: var(--warning); }
+    .severity-info { background: var(--info); }
+
+    .bug-card-tags {
+      display: flex;
+      gap: var(--sp-xs);
+      margin-top: var(--sp-xs);
+    }
+
+    .tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-inset);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* ========== STATS PANEL (right 40%) ========== */
+    .stats-panel {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-lg);
+    }
+
+    .hero-stat {
+      text-align: right;
+      padding: var(--sp-xl) 0;
+    }
+
+    .hero-stat-number {
+      font-family: var(--font-display);
+      font-size: 96px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hero-stat-label {
+      font-family: var(--font-display);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-ghost);
+      margin-top: var(--sp-sm);
+    }
+
+    /* Sparkline */
+    .sparkline-container {
+      text-align: right;
+      padding-right: var(--sp-sm);
+    }
+
+    .sparkline {
+      width: 180px;
+      height: 40px;
+      display: inline-block;
+    }
+
+    .sparkline path {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* Mini stat cards */
+    .mini-stats {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-sm);
+    }
+
+    .mini-stat {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--sp-sm) var(--sp-md);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-visible);
+      border-radius: var(--radius-md);
+    }
+
+    .mini-stat-label {
+      font-family: var(--font-body);
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .mini-stat-value {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mini-stat-value.critical { color: var(--critical); }
+    .mini-stat-value.warning { color: var(--warning); }
+    .mini-stat-value.success { color: var(--success); }
+    .mini-stat-value.info { color: var(--info); }
+
+    /* Recent activity */
+    .activity-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-sm);
+    }
+
+    .activity-item {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--sp-sm);
+      padding: var(--sp-sm) 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .activity-item:last-child { border-bottom: none; }
+
+    .activity-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 9999px;
+      background: var(--accent);
+      margin-top: 7px;
+      flex-shrink: 0;
+    }
+
+    .activity-text {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .activity-text strong {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .activity-time {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-ghost);
+      margin-top: 2px;
+    }
+
+    /* ========== BUTTONS ========== */
+    .btn {
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-visible);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: transform var(--duration-micro) var(--ease-enter),
+                  box-shadow var(--duration-short) var(--ease-enter);
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .btn-accent {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #1A1814;
+    }
+
+    .btn-accent:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ========== RESPONSIVE ========== */
+    @media (max-width: 1024px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+      .stats-panel {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: var(--sp-md);
+      }
+      .hero-stat {
+        text-align: left;
+      }
+      .hero-stat-number {
+        font-size: 64px;
+      }
+      .sparkline-container {
+        text-align: left;
+        padding-right: 0;
+      }
+      .mini-stats {
+        flex: 1;
+        min-width: 200px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .nav-rail {
+        display: none;
+      }
+      .main {
+        margin-left: 0;
+      }
+      .dashboard {
+        padding: var(--sp-md);
+      }
+      .bug-card {
+        grid-template-columns: 72px 1fr;
+      }
+      .bug-card-thumb {
+        width: 72px;
+        height: 52px;
+      }
+    }
+
+    @media (max-width: 375px) {
+      .hero-stat-number {
+        font-size: 48px;
+      }
+      .topbar {
+        padding: var(--sp-sm) var(--sp-md);
+      }
+      .topbar-search {
+        width: 140px;
+      }
+    }
+
+    /* ========== REDUCED MOTION ========== */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ========== CONTENTEDITABLE ========== */
+    [contenteditable]:focus {
+      outline: 1px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: var(--radius-sm);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav Rail -->
+  <nav class="nav-rail" aria-label="Main navigation">
+    <div class="nav-rail-logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    </div>
+
+    <a class="nav-item active" href="#" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+      <span class="nav-item-label">Dashboard</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 9h-2V5h2v6zm0 4h-2v-2h2v2z"/></svg>
+      <span class="nav-item-label">Reports</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+      <span class="nav-item-label">Analytics</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      <span class="nav-item-label">Team</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+      <span class="nav-item-label">Integrations</span>
+    </a>
+
+    <div class="nav-spacer"></div>
+
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      <span class="nav-item-label">Settings</span>
+    </a>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <h1 class="topbar-title" contenteditable="true" data-pretext>BUGPULSE</h1>
+      <div class="topbar-actions">
+        <input type="text" class="topbar-search" placeholder="Search bugs..." aria-label="Search bugs">
+        <div class="avatar" title="Sam B.">SB</div>
+      </div>
+    </header>
+
+    <!-- Dashboard Grid -->
+    <div class="dashboard">
+      <!-- Left: Bug Feed -->
+      <section class="feed-section" aria-label="Bug feed">
+        <div class="feed-header">
+          <h2 class="feed-title" contenteditable="true" data-pretext>Bug Feed</h2>
+          <span class="feed-filter">Latest first</span>
+        </div>
+
+        <!-- Bug Card 1 -->
+        <article class="bug-card" tabindex="0">
+          <div class="bug-card-thumb">
+            <div class="bug-card-thumb-content">
+              <div class="thumb-line"></div>
+              <div class="thumb-line accent"></div>
+              <div class="thumb-line"></div>
+              <div class="thumb-line"></div>
+            </div>
+          </div>
+          <div class="bug-card-body">
+            <h3 class="bug-card-title" contenteditable="true" data-pretext>Page not found error</h3>
+            <div class="bug-card-meta">
+              <span class="severity-dot severity-critical"></span>
+              <span class="bug-card-author">JohnDoe</span>
+              <span class="bug-card-time">2h ago</span>
+            </div>
+            <div class="bug-card-tags">
+              <span class="tag">navigation</span>
+              <span class="tag">crash</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Bug Card 2 -->
+        <article class="bug-card" tabindex="0">
+          <div class="bug-card-thumb">
+            <div class="bug-card-thumb-content">
+              <div class="thumb-line"></div>
+              <div class="thumb-line"></div>
+              <div class="thumb-line accent"></div>
+              <div class="thumb-line"></div>
+            </div>
+          </div>
+          <div class="bug-card-body">
+            <h3 class="bug-card-title" contenteditable="true" data-pretext>Validation issue in form</h3>
+            <div class="bug-card-meta">
+              <span class="severity-dot severity-warning"></span>
+              <span class="bug-card-author">alice_w</span>
+              <span class="bug-card-time">5h ago</span>
+            </div>
+            <div class="bug-card-tags">
+              <span class="tag">forms</span>
+              <span class="tag">input</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Bug Card 3 -->
+        <article class="bug-card" tabindex="0">
+          <div class="bug-card-thumb">
+            <div class="bug-card-thumb-content">
+              <div class="thumb-line"></div>
+              <div class="thumb-line"></div>
+              <div class="thumb-line"></div>
+              <div class="thumb-line accent"></div>
+            </div>
+          </div>
+          <div class="bug-card-body">
+            <h3 class="bug-card-title" contenteditable="true" data-pretext>Application crashes on reload</h3>
+            <div class="bug-card-meta">
+              <span class="severity-dot severity-critical"></span>
+              <span class="bug-card-author">sam_c</span>
+              <span class="bug-card-time">1d ago</span>
+            </div>
+            <div class="bug-card-tags">
+              <span class="tag">lifecycle</span>
+              <span class="tag">error-boundary</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Bug Card 4 -->
+        <article class="bug-card" tabindex="0">
+          <div class="bug-card-thumb">
+            <div class="bug-card-thumb-content">
+              <div class="thumb-line accent"></div>
+              <div class="thumb-line"></div>
+              <div class="thumb-line"></div>
+              <div class="thumb-line"></div>
+            </div>
+          </div>
+          <div class="bug-card-body">
+            <h3 class="bug-card-title" contenteditable="true" data-pretext>Push notifications not received on iOS</h3>
+            <div class="bug-card-meta">
+              <span class="severity-dot severity-info"></span>
+              <span class="bug-card-author">mike_r</span>
+              <span class="bug-card-time">2d ago</span>
+            </div>
+            <div class="bug-card-tags">
+              <span class="tag">ios</span>
+              <span class="tag">push</span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Right: Stats Panel -->
+      <aside class="stats-panel" aria-label="Bug statistics">
+        <div class="hero-stat">
+          <div class="hero-stat-number" contenteditable="true" data-pretext>135</div>
+          <div class="hero-stat-label">Open Bugs</div>
+        </div>
+
+        <div class="sparkline-container">
+          <svg class="sparkline" viewBox="0 0 180 40" preserveAspectRatio="none">
+            <path d="M0,32 L13,28 L26,30 L39,22 L52,25 L65,18 L78,20 L91,12 L104,15 L117,8 L130,14 L143,10 L156,6 L169,12 L180,8" />
+          </svg>
+        </div>
+
+        <div class="section-label">Breakdown</div>
+        <div class="mini-stats">
+          <div class="mini-stat">
+            <span class="mini-stat-label">Critical</span>
+            <span class="mini-stat-value critical">23</span>
+          </div>
+          <div class="mini-stat">
+            <span class="mini-stat-label">Open</span>
+            <span class="mini-stat-value warning">89</span>
+          </div>
+          <div class="mini-stat">
+            <span class="mini-stat-label">Resolved today</span>
+            <span class="mini-stat-value success">14</span>
+          </div>
+          <div class="mini-stat">
+            <span class="mini-stat-label">Watching</span>
+            <span class="mini-stat-value info">9</span>
+          </div>
+        </div>
+
+        <div class="section-label">Recent Activity</div>
+        <div class="activity-section">
+          <div class="activity-item">
+            <div class="activity-dot"></div>
+            <div>
+              <div class="activity-text"><strong>alice_w</strong> resolved "Cart total shows $0"</div>
+              <div class="activity-time">12 min ago</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot"></div>
+            <div>
+              <div class="activity-text"><strong>JohnDoe</strong> filed "Page not found error"</div>
+              <div class="activity-time">2h ago</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot"></div>
+            <div>
+              <div class="activity-text"><strong>sam_c</strong> assigned "Crash on reload" to <strong>mike_r</strong></div>
+              <div class="activity-time">5h ago</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Pretext -->
+  <script src="pretext.js"></script>
+  <script>
+    // Wait for fonts, then wire Pretext for dynamic text height computation
+    async function initPretext() {
+      await document.fonts.ready;
+
+      const { prepare, layout } = window.Pretext || {};
+      if (!prepare || !layout) {
+        console.warn('Pretext not loaded, skipping dynamic layout');
+        return;
+      }
+
+      const elements = document.querySelectorAll('[data-pretext]');
+      const prepared = new Map();
+
+      for (const el of elements) {
+        const text = el.textContent;
+        const font = getComputedStyle(el).font;
+        prepared.set(el, prepare(text, font));
+      }
+
+      function relayout() {
+        for (const [el, handle] of prepared) {
+          const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.5;
+          const { height } = layout(handle, el.clientWidth, lineHeight);
+          if (height > 0) el.style.height = `${height}px`;
+        }
+      }
+
+      new ResizeObserver(() => relayout()).observe(document.body);
+      relayout();
+
+      // Re-prepare on contenteditable changes
+      for (const el of elements) {
+        if (el.contentEditable === 'true') {
+          new MutationObserver(() => {
+            const font = getComputedStyle(el).font;
+            prepared.set(el, prepare(el.textContent, font));
+            relayout();
+          }).observe(el, { characterData: true, subtree: true, childList: true });
+        }
+      }
+    }
+
+    initPretext().catch(console.error);
+  </script>
+</body>
+</html>
