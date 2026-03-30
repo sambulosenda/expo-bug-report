@@ -1,20 +1,9 @@
 ---
-import Layout from '../layouts/Layout.astro';
+import DashboardLayout from '../layouts/DashboardLayout.astro';
 ---
 
-<Layout title="Integrations">
-  <header class="header">
-    <h1>BugPulse</h1>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <a href="/reports" class="btn">Reports</a>
-      <a href="/team" class="btn">Team</a>
-      <a href="/integrations" class="btn" style="border-color:var(--accent);color:var(--accent);">Integrations</a>
-      <a href="https://sambulosenda.github.io/expo-bug-report/" class="btn" target="_blank" rel="noopener">Docs</a>
-      <button class="btn" id="logout-btn">Logout</button>
-    </div>
-  </header>
-
-  <div class="container">
+<DashboardLayout title="Integrations">
+  <div>
     <div class="card" style="margin-bottom:24px;">
       <h2 style="font-size:16px;margin-bottom:12px;">Connect Integration</h2>
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
@@ -105,11 +94,9 @@ import Layout from '../layouts/Layout.astro';
     const typeSelect = document.getElementById('type-select') as HTMLSelectElement;
     const configFields = document.getElementById('config-fields') as HTMLDivElement;
     const addBtn = document.getElementById('add-btn') as HTMLButtonElement;
-    const logoutBtn = document.getElementById('logout-btn') as HTMLButtonElement;
 
-    if (!window.__bp.isLoggedIn()) {
-      window.location.href = '/login';
-    }
+
+    // Auth check handled by DashboardLayout
 
     const FIELD_CONFIG: Record<string, Array<{ key: string; label: string; placeholder: string; type?: string }>> = {
       linear: [
@@ -314,12 +301,6 @@ import Layout from '../layouts/Layout.astro';
       }
     }
 
-    logoutBtn.addEventListener('click', async () => {
-      await window.__bp.fetch('/v1/auth/logout', { method: 'POST' });
-      window.__bp.logout();
-      window.location.href = '/login';
-    });
-
     fetchIntegrations();
   </script>
-</Layout>
+</DashboardLayout>

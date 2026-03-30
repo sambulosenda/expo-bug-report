@@ -1,13 +1,10 @@
 ---
-import Layout from '../layouts/Layout.astro';
+import DashboardLayout from '../layouts/DashboardLayout.astro';
 ---
 
-<Layout title="Report Detail">
-  <header class="header">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <a href="/reports" class="btn">Back</a>
-      <h1>Report Detail</h1>
-    </div>
+<DashboardLayout title="Report Detail">
+  <div class="report-toolbar">
+    <a href="/reports" class="btn">Back to Reports</a>
     <div style="display:flex;gap:8px;align-items:center;">
       <select id="status-select" class="btn">
         <option value="new">New</option>
@@ -16,9 +13,8 @@ import Layout from '../layouts/Layout.astro';
       </select>
       <button class="btn btn-primary" id="create-issue-btn">Create Issue</button>
     </div>
-  </header>
-
-  <div class="container">
+  </div>
+  <div>
     <div id="loading">Loading...</div>
     <div id="report-detail" hidden>
       <div class="detail-header">
@@ -49,6 +45,7 @@ import Layout from '../layouts/Layout.astro';
   <div id="toast" class="toast" hidden></div>
 
   <style>
+    .report-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .section { margin-bottom: 16px; }
     .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .detail-grid { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
@@ -221,4 +218,4 @@ import Layout from '../layouts/Layout.astro';
 
     loadReport();
   </script>
-</Layout>
+</DashboardLayout>
