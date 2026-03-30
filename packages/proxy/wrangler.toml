@@ -8,7 +8,7 @@ crons = ["0 3 * * *"]  # Daily hash cleanup at 3 AM UTC
 [[d1_databases]]
 binding = "DB"
 database_name = "bugpulse"
-database_id = "PLACEHOLDER"
+database_id = "f2c63165-f998-4bc0-b93a-49980b65989d"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
