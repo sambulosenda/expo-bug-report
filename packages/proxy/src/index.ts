@@ -23,7 +23,15 @@ export const app = new Hono<AppEnv>();
 // --- CORS ---
 app.use('*', (c, next) => {
   const allowedRaw = c.env.ALLOWED_ORIGINS || '*';
-  const origins = allowedRaw === '*' ? '*' : allowedRaw.split(',').map((s: string) => s.trim());
+  if (allowedRaw === '*') {
+    // Echo requesting origin (wildcard doesn't work with Authorization header)
+    return cors({
+      origin: (origin) => origin || '*',
+      allowHeaders: ['Content-Type', 'Authorization', 'X-BugPulse-Key', 'X-BugPulse-Signature', 'X-BugPulse-Timestamp'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    })(c, next);
+  }
+  const origins = allowedRaw.split(',').map((s: string) => s.trim());
   return cors({ origin: origins })(c, next);
 });
 
