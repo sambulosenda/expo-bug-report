@@ -9,6 +9,7 @@ export { generateReproSteps } from './ReproSteps';
 export { detectSeverity } from './Severity';
 export { useThemeColors } from './useThemeColors';
 export { startConsoleCapture, stopConsoleCapture, getConsoleLogs } from './ConsoleCapture';
+export { getExpoPushToken, getCachedPushToken } from './PushToken';
 export type { ThemeColors } from './useThemeColors';
 export type { ConsoleEntry } from './ConsoleCapture';
 export type {

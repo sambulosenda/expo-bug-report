@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useEffect,
   useRef,
   type ReactNode,
 } from 'react';
@@ -14,6 +15,7 @@ import { freezeStateSnapshot, clearStateCapture } from './StateCapture';
 import { freezeNavHistory, clearNavHistory, getCurrentPathname } from './NavigationTracker';
 import { clearLastError } from './ErrorBoundary';
 import type { Integration, BugReport } from './integrations/types';
+import { getExpoPushToken } from './PushToken';
 
 const DEBOUNCE_MS = 3000;
 
@@ -53,6 +55,11 @@ export function BugReportProvider({
   const isModalVisibleRef = useRef(false);
   const lastTriggerTimestamp = useRef(0);
   const viewShotRef = useRef<View>(null);
+
+  // Attempt to capture Expo Push Token on mount (silently fails if unavailable)
+  useEffect(() => {
+    getExpoPushToken().catch(() => {});
+  }, []);
 
   // Auto-detect screen name from NavigationTracker if no provider given
   const resolvedScreenNameProvider = useCallback(() => {

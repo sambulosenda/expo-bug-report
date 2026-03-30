@@ -1,4 +1,5 @@
 import { fileToBase64 } from '../utils/fileToBase64';
+import { getCachedPushToken } from '../PushToken';
 import type { BugReport, Integration, SendResult } from './types';
 
 // expo-crypto provides native HMAC and SHA-256 on React Native (Hermes/JSC)
@@ -184,7 +185,7 @@ export function ProxyIntegration(config: ProxyConfig): Integration {
           screenshotBase64: null,
           screenshotId,
           diagnostics: report.diagnostics ?? null,
-          pushToken: config.pushToken ?? null,
+          pushToken: config.pushToken ?? getCachedPushToken() ?? null,
         });
 
         // HMAC-SHA256 signing
