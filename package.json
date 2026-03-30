@@ -40,6 +40,9 @@
     "expo-localization": {
       "optional": true
     },
+    "expo-crypto": {
+      "optional": true
+    },
     "expo-router": {
       "optional": true
     },

@@ -45,7 +45,7 @@
 **Added:** 2026-03-29 via /plan-eng-review (CEO review expansion deferred)
 
 ## Token validation on integration setup
-**Status:** TODO
+**Status:** IN SCOPE (Phase 2)
 **Priority:** P1
 **What:** When a user configures a Linear/GitHub/Jira integration via `POST /v1/integrations`, proxy makes a test API call to validate the token before saving.
 **Why:** Without validation, users discover bad tokens only when their first bug report fails to create an issue. Bad UX for a paid feature.
@@ -102,3 +102,43 @@
 **Context:** Not blocking v1 (single provider is the expected use case). Becomes relevant if SDK is adopted in monorepo/multi-app setups or if test isolation becomes painful. L-sized refactor touching 3 core modules + all tests. Breaking change for trackStore() API.
 **Depends on:** v1 adoption. Only worth doing if users hit the limitation.
 **Added:** 2026-03-29 via /plan-eng-review (outside voice finding)
+
+## Separate screenshot upload endpoint
+**Status:** TODO
+**Priority:** P1
+**What:** SDK uploads screenshot to a dedicated `POST /v1/screenshots` endpoint first, gets back an ID. Then sends the report (small JSON) with the screenshot ID instead of base64 payload.
+**Why:** Base64 screenshots can be 3-4MB. Combined with R2 upload and integration API calls on the proxy side, this regularly exceeds the 5s SDK timeout on slow connections, triggering the fallback path. Separating upload from report submission keeps the report request fast.
+**Context:** Phase 2 proxy plan. SDK `proxy.ts` currently sends base64 inline. Proxy needs a new endpoint that accepts multipart upload to R2, returns a screenshot ID. Report payload includes `screenshotId` instead of `screenshotBase64`.
+**Effort:** S (CC: ~20 min)
+**Depends on:** Phase 2 proxy baseline.
+**Added:** 2026-03-30 via /plan-ceo-review (outside voice finding)
+
+## CLI configuration UX
+**Status:** TODO
+**Priority:** P1
+**What:** Design and implement CLI commands: `npx @bugpulse/cli signup`, `npx @bugpulse/cli add-integration linear`, `npx @bugpulse/cli status`, `npx @bugpulse/cli health`.
+**Why:** First thing a paying customer touches. No dashboard means the CLI IS the management interface. A bad CLI experience kills conversion from free to paid.
+**Context:** Phase 2 proxy plan. Needs interactive prompts (ink or prompts library), config file format (.bugpulserc or similar), clear error messages. The CLI calls the proxy API endpoints. Should be a separate npm package (`@bugpulse/cli`).
+**Effort:** M (CC: ~30 min)
+**Depends on:** Phase 2 proxy baseline API endpoints.
+**Added:** 2026-03-30 via /plan-ceo-review (outside voice finding)
+
+## Bidirectional reporter feedback with push notifications
+**Status:** TODO
+**Priority:** P2
+**What:** When a developer acknowledges or closes an issue, the reporter's app shows a notification: "Your report about /checkout was fixed!" Requires push notifications, not polling.
+**Why:** Polling-based status checks (the original Phase 2 proposal) have poor UX: reporters may not open the app for days, and stale notifications about old bugs are confusing. Push is the only way to make this feature feel alive.
+**Context:** Requires: Expo Push Notifications as optional peer dep, proxy push token registration endpoint, Linear webhook receiver for status updates, push notification dispatch. Deferred from Phase 2 because it fundamentally needs push infrastructure that doesn't exist yet.
+**Effort:** L (CC: ~2h)
+**Depends on:** Phase 2 proxy baseline + push notification infrastructure decision.
+**Added:** 2026-03-30 via /plan-ceo-review (deferred from Phase 2 expansion)
+
+## Stripe payment failure grace period
+**Status:** TODO
+**Priority:** P1
+**What:** When a card declines on renewal, don't immediately lock out. Add 7-day grace period with features still working but banner shown in CLI/issue links.
+**Why:** Immediate lockout on payment failure is hostile UX. Standard SaaS practice is 7-day grace period. Prevents churn from temporary card issues.
+**Context:** Stripe webhook `invoice.payment_failed` event triggers grace period. Store `grace_expires_at` on users table. During grace: all features work, CLI shows warning, issue links include "(plan expiring)". After grace: auto-downgrade to free. `customer.subscription.deleted` is the hard cutoff.
+**Effort:** S (CC: ~15 min)
+**Depends on:** Phase 2 Stripe webhook handler.
+**Added:** 2026-03-30 via /plan-eng-review (outside voice finding)

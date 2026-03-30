@@ -1,6 +1,25 @@
 import { fileToBase64 } from '../utils/fileToBase64';
 import type { BugReport, Integration, SendResult } from './types';
 
+// expo-crypto provides native HMAC and SHA-256 on React Native (Hermes/JSC)
+// where crypto.subtle is not available.
+let ExpoCrypto: {
+  digestStringAsync: (algorithm: string, data: string) => Promise<string>;
+  hmacStringAsync: (algorithm: string, data: string, key: string) => Promise<string>;
+  CryptoDigestAlgorithm: { SHA256: string };
+} | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require('expo-crypto');
+  ExpoCrypto = {
+    digestStringAsync: mod.digestStringAsync,
+    hmacStringAsync: mod.hmacStringAsync,
+    CryptoDigestAlgorithm: mod.CryptoDigestAlgorithm,
+  };
+} catch {
+  // expo-crypto not installed — ProxyIntegration will throw at construction
+}
+
 interface ProxyConfig {
   proxyUrl: string;
   apiKey: string;
@@ -12,7 +31,28 @@ interface ProxyConfig {
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
+async function sha256(data: string): Promise<string> {
+  if (ExpoCrypto) {
+    return ExpoCrypto.digestStringAsync(ExpoCrypto.CryptoDigestAlgorithm.SHA256, data);
+  }
+  // Fallback for environments with crypto.subtle (tests, web)
+  const encoder = new TextEncoder();
+  const hash = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+  const bytes = new Uint8Array(hash);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 async function computeHmac(secret: string, message: string): Promise<string> {
+  if (ExpoCrypto) {
+    return ExpoCrypto.hmacStringAsync(
+      ExpoCrypto.CryptoDigestAlgorithm.SHA256,
+      message,
+      secret,
+    );
+  }
+  // Fallback for environments with crypto.subtle (tests, web)
   const encoder = new TextEncoder();
   const keyData = encoder.encode(secret);
   const msgData = encoder.encode(message);
@@ -27,15 +67,6 @@ async function computeHmac(secret: string, message: string): Promise<string> {
 
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
   const bytes = new Uint8Array(signature);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function sha256(data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const hash = await crypto.subtle.digest('SHA-256', encoder.encode(data));
-  const bytes = new Uint8Array(hash);
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -105,6 +136,13 @@ async function sendToFallbackWebhook(
 }
 
 export function ProxyIntegration(config: ProxyConfig): Integration {
+  if (!ExpoCrypto && typeof crypto === 'undefined') {
+    throw new Error(
+      '[BugPulse] ProxyIntegration requires expo-crypto for HMAC signing. ' +
+      'Install it with: npx expo install expo-crypto',
+    );
+  }
+
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return {
