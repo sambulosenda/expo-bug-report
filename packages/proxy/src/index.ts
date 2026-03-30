@@ -651,8 +651,11 @@ app.post('/v1/reports/replay', requireAuth, async (c) => {
 
 // --- Dashboard auth: session-based ---
 async function requireDashboardAuth(c: any, next: any) {
-  // Check session cookie first
-  const sessionToken = c.req.header('Cookie')?.match(/bp_session=([^;]+)/)?.[1];
+  // Check Authorization: Bearer <session-token> header, or session cookie
+  const authHeader = c.req.header('Authorization');
+  const sessionToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : c.req.header('Cookie')?.match(/bp_session=([^;]+)/)?.[1];
   if (sessionToken) {
     const session = await c.env.DB.prepare(
       "SELECT user_id, type, team_member_id, expires_at FROM sessions WHERE token = ? AND expires_at > datetime('now')",
@@ -701,29 +704,21 @@ app.post('/v1/auth/login', async (c) => {
     'INSERT INTO sessions (token, user_id, type, expires_at) VALUES (?, ?, ?, ?)',
   ).bind(token, user.id, 'developer', expiresAt).run();
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Set-Cookie': `bp_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 60 * 60}`,
-    },
-  });
+  return c.json({ ok: true, session_token: token });
 });
 
 // --- Dashboard logout ---
 app.post('/v1/auth/logout', requireDashboardAuth, async (c) => {
-  const sessionToken = c.req.header('Cookie')?.match(/bp_session=([^;]+)/)?.[1];
+  // Check Authorization header or cookie for session token
+  const authHeader = c.req.header('Authorization');
+  const sessionToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : c.req.header('Cookie')?.match(/bp_session=([^;]+)/)?.[1];
   if (sessionToken) {
     await c.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(sessionToken).run();
   }
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Set-Cookie': 'bp_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0',
-    },
-  });
+  return c.json({ ok: true });
 });
 
 // --- Magic link auth ---
@@ -754,13 +749,7 @@ app.post('/v1/auth/magic/:token', async (c) => {
     'INSERT INTO sessions (token, user_id, type, team_member_id, expires_at) VALUES (?, ?, ?, ?, ?)',
   ).bind(sessionToken, row.user_id, 'team_member', row.team_member_id, expiresAt).run();
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Set-Cookie': `bp_session=${sessionToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 60 * 60}`,
-    },
-  });
+  return c.json({ ok: true, session_token: sessionToken });
 });
 
 // --- Team invite ---

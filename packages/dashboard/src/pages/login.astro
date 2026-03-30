@@ -85,7 +85,7 @@ import Layout from '../layouts/Layout.astro';
     const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
 
     // Check if already logged in
-    if (document.cookie.includes('bp_session')) {
+    if (localStorage.getItem('bp_session')) {
       window.location.href = '/reports';
     }
 
@@ -96,14 +96,14 @@ import Layout from '../layouts/Layout.astro';
       loginBtn.textContent = 'Logging in...';
 
       try {
-        const res = await fetch('/v1/auth/login', {
+        const res = await window.__bp.fetch('/v1/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ api_key: input.value.trim() }),
-          credentials: 'include',
         });
 
         if (res.ok) {
+          const data = await res.json() as { session_token: string };
+          window.__bp.login(data.session_token);
           window.location.href = '/reports';
         } else {
           errorMsg.textContent = 'Invalid API key';

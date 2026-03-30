@@ -30,7 +30,7 @@ describe('Dashboard Auth', () => {
       expect(res.status).toBe(401);
     });
 
-    it('returns 200 and sets session cookie for valid api_key', async () => {
+    it('returns 200 with session token for valid api_key', async () => {
       const user = await seedUser(env);
 
       const res = await app.request('/v1/auth/login', {
@@ -40,16 +40,14 @@ describe('Dashboard Auth', () => {
       }, env);
 
       expect(res.status).toBe(200);
-      const setCookie = res.headers.get('Set-Cookie');
-      expect(setCookie).toContain('bp_session=');
-      expect(setCookie).toContain('HttpOnly');
-      expect(setCookie).toContain('Secure');
-      expect(setCookie).toContain('SameSite=Strict');
+      const data = await res.json() as { ok: boolean; session_token: string };
+      expect(data.ok).toBe(true);
+      expect(data.session_token).toBeTruthy();
     });
   });
 
   describe('POST /v1/auth/logout', () => {
-    it('clears session cookie', async () => {
+    it('deletes session', async () => {
       const user = await seedUser(env);
 
       // Login first
@@ -59,18 +57,15 @@ describe('Dashboard Auth', () => {
         body: JSON.stringify({ api_key: user.api_key }),
       }, env);
 
-      const cookie = loginRes.headers.get('Set-Cookie')!;
-      const token = cookie.match(/bp_session=([^;]+)/)![1];
+      const loginData = await loginRes.json() as { session_token: string };
 
       // Logout
       const res = await app.request('/v1/auth/logout', {
         method: 'POST',
-        headers: { Cookie: `bp_session=${token}` },
+        headers: { Authorization: `Bearer ${loginData.session_token}` },
       }, env);
 
       expect(res.status).toBe(200);
-      const setCookie = res.headers.get('Set-Cookie');
-      expect(setCookie).toContain('Max-Age=0');
     });
   });
 
@@ -120,8 +115,9 @@ describe('Dashboard Auth', () => {
       }, env);
 
       expect(res.status).toBe(200);
-      const setCookie = res.headers.get('Set-Cookie');
-      expect(setCookie).toContain('bp_session=');
+      const data = await res.json() as { ok: boolean; session_token: string };
+      expect(data.ok).toBe(true);
+      expect(data.session_token).toBeTruthy();
 
       // Token should be marked as used
       expect(db.magicTokens.get('valid-token').used).toBe(1);

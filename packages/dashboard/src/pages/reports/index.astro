@@ -194,7 +194,7 @@ npx @bugpulse/cli init</code></pre>
 
     async function fetchReports() {
       try {
-        const res = await fetch('/v1/dashboard/reports?limit=50', { credentials: 'include' });
+        const res = await window.__bp.fetch('/v1/dashboard/reports?limit=50');
         if (res.status === 401) {
           window.location.href = '/login';
           return;
@@ -236,7 +236,8 @@ npx @bugpulse/cli init</code></pre>
     refreshBtn.addEventListener('click', fetchReports);
 
     logoutBtn.addEventListener('click', async () => {
-      await fetch('/v1/auth/logout', { method: 'POST', credentials: 'include' });
+      await window.__bp.fetch('/v1/auth/logout', { method: 'POST' });
+      window.__bp.logout();
       window.location.href = '/login';
     });
   </script>

@@ -130,6 +130,7 @@
     </footer>
   </div>
 
+  <script is:inline src="/config.js"></script>
   <script>
     const STRIPE_STARTER_LINK = 'https://buy.stripe.com/test_fZu4gAe320EN4vK9ejbwk01';
     const STRIPE_PRO_LINK = 'https://buy.stripe.com/test_3cIfZiaQQevD4vK3TZbwk00';
@@ -158,7 +159,7 @@
       btn.textContent = 'Creating...';
 
       try {
-        const res = await fetch('/v1/signup', {
+        const res = await fetch(window.__BUGPULSE_API + '/v1/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),

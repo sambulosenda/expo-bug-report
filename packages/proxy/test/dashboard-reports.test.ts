@@ -15,8 +15,8 @@ describe('Dashboard Reports', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: apiKey }),
     }, env);
-    const cookie = res.headers.get('Set-Cookie')!;
-    return cookie.match(/bp_session=([^;]+)/)![1];
+    const data = await res.json() as { session_token: string };
+    return data.session_token;
   }
 
   function seedReport(userId: string, overrides: Record<string, any> = {}) {
@@ -48,7 +48,7 @@ describe('Dashboard Reports', () => {
       const token = await loginAndGetCookie(user.api_key);
 
       const res = await app.request('/v1/dashboard/reports', {
-        headers: { Cookie: `bp_session=${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }, env);
 
       expect(res.status).toBe(200);
@@ -63,7 +63,7 @@ describe('Dashboard Reports', () => {
       const token = await loginAndGetCookie(user.api_key);
 
       const res = await app.request('/v1/dashboard/reports', {
-        headers: { Cookie: `bp_session=${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }, env);
 
       expect(res.status).toBe(200);
@@ -79,7 +79,7 @@ describe('Dashboard Reports', () => {
       const token = await loginAndGetCookie(user1.api_key);
 
       const res = await app.request('/v1/dashboard/reports', {
-        headers: { Cookie: `bp_session=${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }, env);
 
       const data = await res.json() as { reports: any[] };
@@ -94,7 +94,7 @@ describe('Dashboard Reports', () => {
       const token = await loginAndGetCookie(user.api_key);
 
       const res = await app.request('/v1/dashboard/reports/nonexistent', {
-        headers: { Cookie: `bp_session=${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }, env);
 
       expect(res.status).toBe(404);
@@ -109,7 +109,7 @@ describe('Dashboard Reports', () => {
       const token = await loginAndGetCookie(user.api_key);
 
       const res = await app.request('/v1/dashboard/reports/rpt-1', {
-        headers: { Cookie: `bp_session=${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }, env);
 
       expect(res.status).toBe(200);
@@ -129,7 +129,7 @@ describe('Dashboard Reports', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Cookie: `bp_session=${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: 'invalid' }),
       }, env);
@@ -145,7 +145,7 @@ describe('Dashboard Reports', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Cookie: `bp_session=${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: 'triaged' }),
       }, env);
@@ -162,7 +162,7 @@ describe('Dashboard Reports', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Cookie: `bp_session=${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: 'triaged' }),
       }, env);

@@ -92,7 +92,7 @@ import Layout from '../layouts/Layout.astro';
 
     async function loadReport() {
       try {
-        const res = await fetch(`/v1/dashboard/reports/${reportId}`, { credentials: 'include' });
+        const res = await window.__bp.fetch(`/v1/dashboard/reports/${reportId}`);
         if (res.status === 401) { window.location.href = '/login'; return; }
         if (res.status === 404) { loading.hidden = true; notFound.hidden = false; return; }
         if (!res.ok) return;
@@ -184,7 +184,7 @@ import Layout from '../layouts/Layout.astro';
         statusSelect.addEventListener('change', async () => {
           const newStatus = statusSelect.value;
           try {
-            const r = await fetch(`/v1/reports/${reportId}`, {
+            const r = await window.__bp.fetch(`/v1/reports/${reportId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ status: newStatus }),
@@ -203,7 +203,7 @@ import Layout from '../layouts/Layout.astro';
           createIssueBtn.disabled = true;
           createIssueBtn.textContent = 'Creating...';
           try {
-            const intRes = await fetch('/v1/integrations', { credentials: 'include' });
+            const intRes = await window.__bp.fetch('/v1/integrations');
             if (!intRes.ok) { showToast('Failed to load integrations', 'error'); return; }
             const intData = await intRes.json();
             if (!intData.integrations?.length) {
