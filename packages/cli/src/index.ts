@@ -356,6 +356,46 @@ async function replay(): Promise<void> {
   }
 }
 
+async function openDashboard() {
+  const dashboardUrl = 'https://bugpulse.dev/dashboard';
+  console.log(`\n  Opening dashboard: ${dashboardUrl}\n`);
+  const { execFile } = await import('child_process');
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  execFile(cmd, [dashboardUrl]);
+}
+
+async function invite() {
+  const config = requireConfig();
+  const email = process.argv[3];
+  if (!email || !email.includes('@')) {
+    console.error('  Usage: npx @bugpulse/cli invite email@team.com');
+    process.exit(1);
+  }
+
+  const res = await apiRequest('/v1/team/invite', config, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+  if (res.ok) {
+    const data = await res.json() as { ok: boolean; email_sent: boolean; invite_url?: string };
+    if (data.email_sent) {
+      console.log(`\n  Invite sent to ${email}!\n`);
+    } else {
+      console.log(`\n  Email delivery failed. Share this link manually:\n  ${data.invite_url}\n`);
+    }
+  } else {
+    const data = await res.json() as { error: string };
+    if (data.error === 'already_invited') {
+      console.error(`  ${email} is already invited.`);
+    } else if (data.error === 'team_limit_reached') {
+      console.error('  Team limit reached (max 20 members).');
+    } else {
+      console.error(`  Error: ${data.error}`);
+    }
+  }
+}
+
 const command = process.argv[2];
 switch (command) {
   case 'signup': signup().catch(console.error); break;
@@ -369,6 +409,8 @@ switch (command) {
   case 'billing': billing().catch(console.error); break;
   case 'failed': showFailed().catch(console.error); break;
   case 'replay': replay().catch(console.error); break;
+  case 'open': openDashboard().catch(console.error); break;
+  case 'invite': invite().catch(console.error); break;
   default:
     console.log(`
   BugPulse CLI
@@ -388,6 +430,10 @@ switch (command) {
     stats               Report analytics (top screens, volume, severity)
     failed              Show failed reports
     replay <id>         Retry a failed report
+
+  Team:
+    invite <email>      Invite a team member to the dashboard
+    open                Open the dashboard in your browser
 
   Billing:
     billing             Open Stripe billing portal
