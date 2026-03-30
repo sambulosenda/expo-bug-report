@@ -1,0 +1,243 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Reports">
+  <header class="header">
+    <h1>BugPulse</h1>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn" id="refresh-btn">Refresh</button>
+      <button class="btn" id="logout-btn">Logout</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="toolbar">
+      <div class="filters">
+        <select id="severity-filter">
+          <option value="">All severities</option>
+          <option value="crash">Crash</option>
+          <option value="error">Error</option>
+          <option value="feedback">Feedback</option>
+        </select>
+        <select id="status-filter">
+          <option value="">All statuses</option>
+          <option value="new">New</option>
+          <option value="triaged">Triaged</option>
+          <option value="fixed">Fixed</option>
+        </select>
+      </div>
+      <div class="poll-status" id="poll-status">Auto-refreshing every 15s</div>
+    </div>
+
+    <div id="report-list"></div>
+    <div id="empty-state" class="empty-state" hidden>
+      <h2>No reports yet</h2>
+      <p>Set up BugPulse in your app to start receiving reports.</p>
+      <pre><code>npm install @bugpulse/react-native
+npx @bugpulse/cli init</code></pre>
+      <p style="margin-top:16px;color:var(--text-muted);font-size:13px;">
+        Reports will appear here automatically once your app starts sending them.
+      </p>
+    </div>
+  </div>
+
+  <style>
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .filters { display: flex; gap: 8px; }
+    .poll-status { font-size: 12px; color: var(--text-muted); }
+
+    .report-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .report-card:hover { border-color: var(--accent); }
+    .report-card.new-report {
+      animation: highlight 2s ease;
+    }
+
+    @keyframes highlight {
+      0% { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+      100% { border-color: var(--border); background: var(--surface); }
+    }
+
+    .report-screen {
+      font-family: monospace;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .report-desc {
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .report-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+    }
+    .empty-state h2 { margin-bottom: 12px; }
+    .empty-state pre {
+      display: inline-block;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+  </style>
+
+  <script>
+    const reportList = document.getElementById('report-list')!;
+    const emptyState = document.getElementById('empty-state')!;
+    const severityFilter = document.getElementById('severity-filter') as HTMLSelectElement;
+    const statusFilter = document.getElementById('status-filter') as HTMLSelectElement;
+    const pollStatus = document.getElementById('poll-status')!;
+    const refreshBtn = document.getElementById('refresh-btn')!;
+    const logoutBtn = document.getElementById('logout-btn')!;
+
+    let reports: any[] = [];
+    let pollTimer: ReturnType<typeof setInterval>;
+
+    function timeAgo(dateStr: string): string {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
+    }
+
+    function createReportCard(r: any): HTMLAnchorElement {
+      const card = document.createElement('a');
+      card.href = `/report?id=${r.id}`;
+      card.className = 'report-card';
+
+      const sevBadge = document.createElement('span');
+      sevBadge.className = `badge badge-${r.severity}`;
+      sevBadge.textContent = r.severity;
+
+      const content = document.createElement('div');
+      const desc = document.createElement('div');
+      desc.className = 'report-desc';
+      desc.textContent = r.description || 'No description';
+      const screen = document.createElement('div');
+      screen.className = 'report-screen';
+      screen.textContent = r.screen || 'unknown';
+      content.appendChild(desc);
+      content.appendChild(screen);
+
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `badge badge-${r.status}`;
+      statusBadge.textContent = r.status;
+
+      const time = document.createElement('span');
+      time.className = 'report-time';
+      time.textContent = timeAgo(r.created_at);
+
+      card.appendChild(sevBadge);
+      card.appendChild(content);
+      card.appendChild(statusBadge);
+      card.appendChild(time);
+
+      return card;
+    }
+
+    function renderReports() {
+      const sev = severityFilter.value;
+      const stat = statusFilter.value;
+      const filtered = reports.filter(r =>
+        (!sev || r.severity === sev) && (!stat || r.status === stat)
+      );
+
+      if (filtered.length === 0 && reports.length === 0) {
+        reportList.replaceChildren();
+        emptyState.hidden = false;
+        return;
+      }
+
+      emptyState.hidden = true;
+      const fragment = document.createDocumentFragment();
+      for (const r of filtered) {
+        fragment.appendChild(createReportCard(r));
+      }
+      reportList.replaceChildren(fragment);
+    }
+
+    async function fetchReports() {
+      try {
+        const res = await fetch('/v1/dashboard/reports?limit=50', { credentials: 'include' });
+        if (res.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const prevCount = reports.length;
+        reports = data.reports || [];
+        renderReports();
+
+        if (prevCount > 0 && reports.length > prevCount) {
+          const newCards = reportList.querySelectorAll('.report-card');
+          for (let i = 0; i < reports.length - prevCount; i++) {
+            newCards[i]?.classList.add('new-report');
+          }
+        }
+
+        pollStatus.textContent = `Updated ${new Date().toLocaleTimeString()} \u00b7 Auto-refreshing every 15s`;
+      } catch {
+        pollStatus.textContent = 'Connection error \u00b7 Retrying...';
+      }
+    }
+
+    fetchReports();
+    pollTimer = setInterval(fetchReports, 15000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearInterval(pollTimer);
+      } else {
+        fetchReports();
+        pollTimer = setInterval(fetchReports, 15000);
+      }
+    });
+
+    severityFilter.addEventListener('change', renderReports);
+    statusFilter.addEventListener('change', renderReports);
+    refreshBtn.addEventListener('click', fetchReports);
+
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/v1/auth/logout', { method: 'POST', credentials: 'include' });
+      window.location.href = '/login';
+    });
+  </script>
+</Layout>

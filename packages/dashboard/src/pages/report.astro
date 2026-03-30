@@ -1,0 +1,224 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Report Detail">
+  <header class="header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <a href="/reports" class="btn">Back</a>
+      <h1>Report Detail</h1>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="status-select" class="btn">
+        <option value="new">New</option>
+        <option value="triaged">Triaged</option>
+        <option value="fixed">Fixed</option>
+      </select>
+      <button class="btn btn-primary" id="create-issue-btn">Create Issue</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="loading">Loading...</div>
+    <div id="report-detail" hidden>
+      <div class="detail-header">
+        <div>
+          <span id="severity-badge" class="badge"></span>
+          <span id="status-badge" class="badge" style="margin-left:6px;"></span>
+        </div>
+        <span id="report-time" class="report-time"></span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-main">
+          <section class="card section"><h3>Description</h3><p id="report-desc"></p></section>
+          <section class="card section"><h3>Screen</h3><code id="report-screen"></code></section>
+          <section class="card section" id="nav-section" hidden><h3>Navigation History</h3><div id="nav-list"></div></section>
+          <section class="card section" id="state-section" hidden><h3>State Snapshots</h3><div id="state-list"></div></section>
+          <section class="card section" id="console-section" hidden><h3>Console Logs</h3><div id="console-list"></div></section>
+          <section class="card section" id="error-section" hidden><h3>Error</h3><pre id="error-detail"></pre></section>
+          <section class="card section" id="device-section" hidden><h3>Device Info</h3><div id="device-info"></div></section>
+        </div>
+        <div class="detail-sidebar" id="screenshot-section" hidden>
+          <section class="card"><h3>Screenshot</h3><img id="screenshot-img" class="screenshot" alt="Screenshot" /></section>
+        </div>
+      </div>
+    </div>
+    <div id="not-found" hidden><h2>Report not found</h2><p><a href="/reports">Back to reports</a></p></div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+
+  <style>
+    .section { margin-bottom: 16px; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+    @media (max-width: 768px) { .detail-grid { grid-template-columns: 1fr; } }
+    .card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px; }
+    .screenshot { width: 100%; border-radius: 4px; }
+    .nav-entry { font-family: monospace; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .nav-entry:last-child { border-bottom: none; }
+    .state-entry { margin-bottom: 8px; }
+    .state-name { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+    .state-data { font-family: monospace; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 4px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .console-entry { font-family: monospace; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .console-entry:last-child { border-bottom: none; }
+    .console-warn { color: var(--yellow); }
+    .console-error { color: var(--red); }
+    pre { font-size: 12px; background: var(--bg); padding: 12px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    .device-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .device-row:last-child { border-bottom: none; }
+    .device-label { color: var(--text-muted); }
+    .report-time { font-size: 13px; color: var(--text-muted); }
+  </style>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const reportId = params.get('id');
+    if (!reportId) { window.location.href = '/reports'; }
+
+    const loading = document.getElementById('loading')!;
+    const detail = document.getElementById('report-detail')!;
+    const notFound = document.getElementById('not-found')!;
+    const statusSelect = document.getElementById('status-select') as HTMLSelectElement;
+    const createIssueBtn = document.getElementById('create-issue-btn') as HTMLButtonElement;
+    const toastEl = document.getElementById('toast')!;
+
+    function showToast(msg: string, type: string) {
+      toastEl.textContent = msg;
+      toastEl.className = `toast toast-${type}`;
+      toastEl.hidden = false;
+      setTimeout(() => { toastEl.hidden = true; }, 3000);
+    }
+
+    async function loadReport() {
+      try {
+        const res = await fetch(`/v1/dashboard/reports/${reportId}`, { credentials: 'include' });
+        if (res.status === 401) { window.location.href = '/login'; return; }
+        if (res.status === 404) { loading.hidden = true; notFound.hidden = false; return; }
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const report = data.report;
+        loading.hidden = true;
+        detail.hidden = false;
+
+        const sevBadge = document.getElementById('severity-badge')!;
+        sevBadge.className = `badge badge-${report.severity}`;
+        sevBadge.textContent = report.severity;
+        const statBadge = document.getElementById('status-badge')!;
+        statBadge.className = `badge badge-${report.status}`;
+        statBadge.textContent = report.status;
+        statusSelect.value = report.status;
+
+        document.getElementById('report-time')!.textContent = new Date(report.created_at).toLocaleString();
+        document.getElementById('report-desc')!.textContent = report.description || 'No description';
+        document.getElementById('report-screen')!.textContent = report.screen || 'unknown';
+
+        if (report.screenshot_id) {
+          document.getElementById('screenshot-section')!.hidden = false;
+          (document.getElementById('screenshot-img') as HTMLImageElement).src = `/v1/screenshots/${report.screenshot_id}`;
+        }
+
+        let diagnostics = report.diagnostics;
+        if (typeof diagnostics === 'string') {
+          try { diagnostics = JSON.parse(diagnostics); } catch { diagnostics = null; }
+        }
+
+        if (diagnostics?.navHistory?.length) {
+          document.getElementById('nav-section')!.hidden = false;
+          const list = document.getElementById('nav-list')!;
+          for (const entry of diagnostics.navHistory) {
+            const div = document.createElement('div');
+            div.className = 'nav-entry';
+            div.textContent = `${entry.pathname} (${new Date(entry.timestamp).toLocaleTimeString()})`;
+            list.appendChild(div);
+          }
+        }
+
+        if (diagnostics?.stateSnapshots?.length) {
+          document.getElementById('state-section')!.hidden = false;
+          const sList = document.getElementById('state-list')!;
+          for (const snap of diagnostics.stateSnapshots) {
+            const entry = document.createElement('div');
+            entry.className = 'state-entry';
+            const name = document.createElement('div');
+            name.className = 'state-name';
+            name.textContent = snap.name + (snap.truncated ? ' (truncated)' : '');
+            entry.appendChild(name);
+            const d = document.createElement('div');
+            d.className = 'state-data';
+            try { d.textContent = JSON.stringify(JSON.parse(snap.state), null, 2); }
+            catch { d.textContent = snap.state; }
+            entry.appendChild(d);
+            sList.appendChild(entry);
+          }
+        }
+
+        if (diagnostics?.lastError) {
+          document.getElementById('error-section')!.hidden = false;
+          document.getElementById('error-detail')!.textContent =
+            `${diagnostics.lastError.message}\n\n${diagnostics.lastError.stack || ''}\n\n${diagnostics.lastError.componentStack || ''}`;
+        }
+
+        // Device info
+        const device = diagnostics?.device || report.device;
+        if (device) {
+          document.getElementById('device-section')!.hidden = false;
+          const container = document.getElementById('device-info')!;
+          for (const [label, value] of [['Model', device.model], ['OS', device.os], ['App Version', device.appVersion], ['Screen Size', device.screenSize], ['Locale', device.locale]] as [string, string][]) {
+            if (!value) continue;
+            const row = document.createElement('div');
+            row.className = 'device-row';
+            const l = document.createElement('span');
+            l.className = 'device-label';
+            l.textContent = label;
+            const v = document.createElement('span');
+            v.textContent = value;
+            row.appendChild(l);
+            row.appendChild(v);
+            container.appendChild(row);
+          }
+        }
+
+        // Status change
+        statusSelect.addEventListener('change', async () => {
+          const newStatus = statusSelect.value;
+          try {
+            const r = await fetch(`/v1/reports/${reportId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: newStatus }),
+              credentials: 'include',
+            });
+            if (r.ok) {
+              statBadge.className = `badge badge-${newStatus}`;
+              statBadge.textContent = newStatus;
+              showToast(`Status: ${newStatus}`, 'success');
+            } else { showToast('Failed to update status', 'error'); }
+          } catch { showToast('Network error', 'error'); }
+        });
+
+        // Create issue
+        createIssueBtn.addEventListener('click', async () => {
+          createIssueBtn.disabled = true;
+          createIssueBtn.textContent = 'Creating...';
+          try {
+            const intRes = await fetch('/v1/integrations', { credentials: 'include' });
+            if (!intRes.ok) { showToast('Failed to load integrations', 'error'); return; }
+            const intData = await intRes.json();
+            if (!intData.integrations?.length) {
+              showToast('No integrations. Run: npx @bugpulse/cli add-integration', 'error');
+              return;
+            }
+            showToast(`${intData.integrations.length} integration(s) found. Dashboard issue creation coming soon.`, 'success');
+          } catch { showToast('Network error', 'error'); }
+          finally { createIssueBtn.disabled = false; createIssueBtn.textContent = 'Create Issue'; }
+        });
+      } catch {
+        loading.textContent = 'Failed to load report.';
+      }
+    }
+
+    loadReport();
+  </script>
+</Layout>

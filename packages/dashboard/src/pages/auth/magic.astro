@@ -1,0 +1,54 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Signing in">
+  <div class="login-container">
+    <div class="login-card card">
+      <h1>BugPulse</h1>
+      <p id="status">Verifying your invite link...</p>
+      <p id="error" class="error" hidden></p>
+    </div>
+  </div>
+
+  <style>
+    .login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { width: 100%; max-width: 400px; text-align: center; }
+    .login-card h1 { font-size: 28px; margin-bottom: 16px; }
+    .error { color: var(--red); margin-top: 12px; font-size: 14px; }
+  </style>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const status = document.getElementById('status')!;
+    const error = document.getElementById('error')!;
+
+    if (!token) {
+      status.hidden = true;
+      error.hidden = false;
+      error.textContent = 'Invalid invite link.';
+    } else {
+      (async () => {
+        try {
+          const res = await fetch(`/v1/auth/magic/${token}`, { credentials: 'include' });
+          if (res.ok) {
+            status.textContent = 'Success! Redirecting...';
+            setTimeout(() => { window.location.href = '/reports'; }, 500);
+          } else {
+            const data = await res.json();
+            status.hidden = true;
+            error.hidden = false;
+            error.textContent = data.error === 'token_already_used'
+              ? 'This invite link has already been used. Ask for a new one.'
+              : 'This invite link has expired. Ask for a new one.';
+          }
+        } catch {
+          status.hidden = true;
+          error.hidden = false;
+          error.textContent = 'Network error. Check your connection.';
+        }
+      })();
+    }
+  </script>
+</Layout>

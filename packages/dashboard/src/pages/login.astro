@@ -1,0 +1,121 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Login">
+  <div class="login-container">
+    <div class="login-card card">
+      <h1>BugPulse</h1>
+      <p class="subtitle">Enter your API key to access the dashboard</p>
+
+      <form id="login-form">
+        <input
+          type="text"
+          id="api-key"
+          placeholder="bp_..."
+          autocomplete="off"
+          required
+        />
+        <button type="submit" class="btn btn-primary" id="login-btn">
+          Log in
+        </button>
+      </form>
+
+      <p id="error-msg" class="error" hidden></p>
+      <p class="help">
+        Don't have an API key? Run <code>npx @bugpulse/cli signup</code>
+      </p>
+    </div>
+  </div>
+
+  <style>
+    .login-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+    .login-card h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      font-size: 15px;
+      font-family: monospace;
+    }
+    .error {
+      color: var(--red);
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    .help {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-top: 20px;
+    }
+    code {
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+  </style>
+
+  <script>
+    const form = document.getElementById('login-form') as HTMLFormElement;
+    const input = document.getElementById('api-key') as HTMLInputElement;
+    const errorMsg = document.getElementById('error-msg') as HTMLParagraphElement;
+    const loginBtn = document.getElementById('login-btn') as HTMLButtonElement;
+
+    // Check if already logged in
+    if (document.cookie.includes('bp_session')) {
+      window.location.href = '/reports';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.hidden = true;
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Logging in...';
+
+      try {
+        const res = await fetch('/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: input.value.trim() }),
+          credentials: 'include',
+        });
+
+        if (res.ok) {
+          window.location.href = '/reports';
+        } else {
+          errorMsg.textContent = 'Invalid API key';
+          errorMsg.hidden = false;
+        }
+      } catch {
+        errorMsg.textContent = 'Network error. Check your connection.';
+        errorMsg.hidden = false;
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Log in';
+      }
+    });
+  </script>
+</Layout>
