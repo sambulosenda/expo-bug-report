@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { lookupUser, verifyHmac, checkTierAccess } from './auth';
 import { checkDuplicate, updateHashWithIssueUrl, cleanupExpiredHashes, computeHash } from './dedup';
 import { deriveLabels } from './labels';
@@ -20,19 +19,29 @@ type AppEnv = { Bindings: Env; Variables: { user: User } };
 
 export const app = new Hono<AppEnv>();
 
-// --- CORS ---
-app.use('*', (c, next) => {
-  const allowedRaw = c.env.ALLOWED_ORIGINS || '*';
-  if (allowedRaw === '*') {
-    // Echo requesting origin (wildcard doesn't work with Authorization header)
-    return cors({
-      origin: (origin) => origin || '*',
-      allowHeaders: ['Content-Type', 'Authorization', 'X-BugPulse-Key', 'X-BugPulse-Signature', 'X-BugPulse-Timestamp'],
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    })(c, next);
+// --- CORS (manual — Hono cors middleware drops Allow-Origin on Workers) ---
+const CORS_HEADERS = ['Content-Type', 'Authorization', 'X-BugPulse-Key', 'X-BugPulse-Signature', 'X-BugPulse-Timestamp'];
+const CORS_METHODS = 'GET,POST,PATCH,DELETE,OPTIONS';
+
+app.use('*', async (c, next) => {
+  const origin = c.req.header('Origin') || '*';
+
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': CORS_METHODS,
+        'Access-Control-Allow-Headers': CORS_HEADERS.join(','),
+        'Access-Control-Max-Age': '86400',
+      },
+    });
   }
-  const origins = allowedRaw.split(',').map((s: string) => s.trim());
-  return cors({ origin: origins })(c, next);
+
+  await next();
+  c.res.headers.set('Access-Control-Allow-Origin', origin);
+  c.res.headers.set('Access-Control-Allow-Methods', CORS_METHODS);
+  c.res.headers.set('Access-Control-Allow-Headers', CORS_HEADERS.join(','));
 });
 
 // --- Auth middleware (reusable) ---
@@ -761,36 +770,42 @@ app.post('/v1/auth/magic/:token', async (c) => {
 });
 
 // --- Team invite ---
-app.post('/v1/team/invite', requireAuth, async (c) => {
+app.post('/v1/team/invite', requireDashboardAuth, async (c) => {
   const user = c.get('user');
+  const sessionType = c.get('sessionType');
+  if (sessionType === 'team_member') {
+    return c.json({ error: 'developer_only' }, 403);
+  }
   const body = await c.req.json<{ email?: string }>();
 
   if (!body.email || !body.email.includes('@')) {
     return c.json({ error: 'validation_error', details: ['valid email required'] }, 422);
   }
 
-  // Check max team size (20 members)
-  const count = await c.env.DB.prepare(
-    'SELECT COUNT(*) as count FROM team_members WHERE user_id = ?',
-  ).bind(user.id).first<{ count: number }>();
-  if ((count?.count ?? 0) >= 20) {
-    return c.json({ error: 'team_limit_reached', max: 20 }, 422);
-  }
-
-  // Check for duplicate
+  // Check for existing member (idempotent: re-invite if pending)
   const existing = await c.env.DB.prepare(
     'SELECT id FROM team_members WHERE user_id = ? AND email = ?',
-  ).bind(user.id, body.email).first();
+  ).bind(user.id, body.email).first<{ id: string }>();
+
+  let memberId: string;
   if (existing) {
-    return c.json({ error: 'already_invited' }, 409);
+    memberId = existing.id;
+  } else {
+    // Check max team size (20 members)
+    const count = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count FROM team_members WHERE user_id = ?',
+    ).bind(user.id).first<{ count: number }>();
+    if ((count?.count ?? 0) >= 20) {
+      return c.json({ error: 'team_limit_reached', max: 20 }, 422);
+    }
+
+    memberId = crypto.randomUUID();
+    await c.env.DB.prepare(
+      'INSERT INTO team_members (id, user_id, email, invited_by) VALUES (?, ?, ?, ?)',
+    ).bind(memberId, user.id, body.email, user.id).run();
   }
 
-  const memberId = crypto.randomUUID();
-  await c.env.DB.prepare(
-    'INSERT INTO team_members (id, user_id, email, invited_by) VALUES (?, ?, ?, ?)',
-  ).bind(memberId, user.id, body.email, user.id).run();
-
-  // Generate magic link token
+  // Generate magic link token (new token even for re-invite)
   const magicToken = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   await c.env.DB.prepare(
@@ -827,16 +842,25 @@ app.post('/v1/team/invite', requireAuth, async (c) => {
 });
 
 // --- Team management ---
-app.get('/v1/team', requireAuth, async (c) => {
+app.get('/v1/team', requireDashboardAuth, async (c) => {
   const user = c.get('user');
   const rows = await c.env.DB.prepare(
-    'SELECT id, email, created_at FROM team_members WHERE user_id = ?',
+    `SELECT tm.id, tm.email, tm.created_at,
+            CASE WHEN s.team_member_id IS NOT NULL THEN 'active' ELSE 'pending' END AS status
+     FROM team_members tm
+     LEFT JOIN sessions s ON s.team_member_id = tm.id
+     WHERE tm.user_id = ?
+     GROUP BY tm.id`,
   ).bind(user.id).all();
   return c.json({ members: rows.results ?? [] });
 });
 
-app.delete('/v1/team/:id', requireAuth, async (c) => {
+app.delete('/v1/team/:id', requireDashboardAuth, async (c) => {
   const user = c.get('user');
+  const sessionType = c.get('sessionType');
+  if (sessionType === 'team_member') {
+    return c.json({ error: 'developer_only' }, 403);
+  }
   const memberId = c.req.param('id');
 
   // Delete member and their sessions

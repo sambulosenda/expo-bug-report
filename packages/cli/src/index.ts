@@ -372,10 +372,7 @@ async function invite() {
     process.exit(1);
   }
 
-  const res = await apiRequest('/v1/team/invite', config, {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  });
+  const res = await apiRequest(config, 'POST', '/v1/team/invite', { email });
 
   if (res.ok) {
     const data = await res.json() as { ok: boolean; email_sent: boolean; invite_url?: string };

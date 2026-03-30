@@ -141,5 +141,18 @@ const { title } = Astro.props;
   </head>
   <body>
     <slot />
+    <script is:inline>
+      (function() {
+        if (!window.__bp || !window.__bp.isLoggedIn()) return;
+        window.__bp.fetch('/v1/team').then(function(res) {
+          if (!res.ok) return;
+          return res.json();
+        }).then(function(data) {
+          if (!data) return;
+          var el = document.getElementById('team-link');
+          if (el) el.textContent = 'Team (' + (data.members || []).length + ')';
+        }).catch(function() {});
+      })();
+    </script>
   </body>
 </html>

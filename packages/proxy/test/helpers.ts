@@ -254,9 +254,12 @@ class MockD1Database {
       return member ? [member] : [];
     }
 
-    // SELECT from team_members WHERE user_id = ? (list)
-    if (sqlLower.includes('select') && sqlLower.includes('team_members') && sqlLower.includes('user_id')) {
-      return [...this.teamMembers.values()].filter(m => m.user_id === params[0]);
+    // SELECT from team_members WHERE user_id = ? (list, with LEFT JOIN sessions for status)
+    if (sqlLower.includes('select') && sqlLower.includes('team_members') && sqlLower.includes('user_id') && !sqlLower.includes('and email')) {
+      return [...this.teamMembers.values()].filter(m => m.user_id === params[0]).map(m => {
+        const hasSession = [...this.sessions.values()].some(s => s.team_member_id === m.id);
+        return { ...m, status: hasSession ? 'active' : 'pending' };
+      });
     }
 
     // DELETE FROM team_members

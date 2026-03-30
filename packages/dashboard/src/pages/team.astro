@@ -1,0 +1,240 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Team">
+  <header class="header">
+    <h1>BugPulse</h1>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <a href="/reports" class="btn">Reports</a>
+      <a href="/team" class="btn" style="border-color:var(--accent);color:var(--accent);">Team</a>
+      <button class="btn" id="logout-btn">Logout</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card" style="margin-bottom:24px;">
+      <h2 style="font-size:16px;margin-bottom:12px;">Invite Team Member</h2>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+        Team members get read access to bug reports via a magic link email.
+      </p>
+      <form id="invite-form" style="display:flex;gap:8px;">
+        <input type="email" id="invite-email" placeholder="teammate@company.com" style="flex:1;" required />
+        <button type="submit" class="btn btn-primary" id="invite-btn">Send Invite</button>
+      </form>
+    </div>
+
+    <div id="member-list"></div>
+    <div id="empty-state" class="empty-state" hidden>
+      <h2 style="font-size:18px;margin-bottom:8px;">No team members yet</h2>
+      <p style="color:var(--text-muted);font-size:14px;">Invite your team to give them access to bug reports.</p>
+    </div>
+  </div>
+
+  <style>
+    .member-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+    }
+    .member-email { font-size: 14px; }
+    .member-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .badge-pending { background: rgba(234, 179, 8, 0.15); color: var(--yellow); }
+    .badge-active { background: rgba(34, 197, 94, 0.15); color: var(--green); }
+    .btn-danger {
+      background: transparent;
+      border-color: var(--red);
+      color: var(--red);
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.15); }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    .empty-state { text-align: center; padding: 80px 20px; }
+  </style>
+
+  <script>
+    const memberList = document.getElementById('member-list') as HTMLDivElement;
+    const emptyState = document.getElementById('empty-state') as HTMLDivElement;
+    const inviteForm = document.getElementById('invite-form') as HTMLFormElement;
+    const inviteEmail = document.getElementById('invite-email') as HTMLInputElement;
+    const inviteBtn = document.getElementById('invite-btn') as HTMLButtonElement;
+    const logoutBtn = document.getElementById('logout-btn') as HTMLButtonElement;
+
+    if (!window.__bp.isLoggedIn()) {
+      window.location.href = '/login';
+    }
+
+    function showToast(message: string, type: 'success' | 'error') {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    let members: Array<{ id: string; email: string; status: string; created_at: string }> = [];
+
+    function renderMembers() {
+      if (members.length === 0) {
+        memberList.replaceChildren();
+        emptyState.hidden = false;
+        return;
+      }
+      emptyState.hidden = true;
+      const fragment = document.createDocumentFragment();
+      for (const m of members) {
+        const row = document.createElement('div');
+        row.className = 'member-row';
+
+        const email = document.createElement('span');
+        email.className = 'member-email';
+        email.textContent = m.email;
+
+        const badge = document.createElement('span');
+        badge.className = `badge badge-${m.status}`;
+        badge.textContent = m.status;
+
+        const date = document.createElement('span');
+        date.className = 'member-date';
+        date.textContent = new Date(m.created_at).toLocaleDateString();
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;';
+
+        if (m.status === 'pending') {
+          const reinvite = document.createElement('button');
+          reinvite.className = 'btn btn-sm';
+          reinvite.textContent = 'Re-invite';
+          reinvite.addEventListener('click', () => handleReinvite(m.email));
+          actions.appendChild(reinvite);
+        }
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn btn-danger btn-sm';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', () => handleRemove(m.id, m.email));
+        actions.appendChild(removeBtn);
+
+        row.appendChild(email);
+        row.appendChild(badge);
+        row.appendChild(date);
+        row.appendChild(actions);
+        fragment.appendChild(row);
+      }
+      memberList.replaceChildren(fragment);
+    }
+
+    async function fetchMembers() {
+      try {
+        const res = await window.__bp.fetch('/v1/team');
+        if (res.status === 401) { window.location.href = '/login'; return; }
+        if (!res.ok) return;
+        const data = await res.json() as { members: typeof members };
+        members = data.members || [];
+        renderMembers();
+      } catch {
+        showToast('Failed to load team members', 'error');
+      }
+    }
+
+    inviteForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = inviteEmail.value.trim();
+      if (!email) return;
+
+      inviteBtn.disabled = true;
+      inviteBtn.textContent = 'Sending...';
+
+      try {
+        const res = await window.__bp.fetch('/v1/team/invite', {
+          method: 'POST',
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await res.json() as { ok?: boolean; error?: string; email_sent?: boolean; invite_url?: string };
+
+        if (!res.ok) {
+          if (data.error === 'team_limit_reached') {
+            showToast('Team limit reached (max 20 members)', 'error');
+          } else {
+            showToast(`Invite failed: ${data.error}`, 'error');
+          }
+          return;
+        }
+
+        if (data.email_sent) {
+          showToast(`Invite sent to ${email}!`, 'success');
+        } else if (data.invite_url) {
+          try {
+            await navigator.clipboard.writeText(data.invite_url);
+            showToast('Email failed. Invite link copied to clipboard!', 'error');
+          } catch {
+            prompt('Email failed. Copy this invite link:', data.invite_url);
+          }
+        }
+
+        inviteEmail.value = '';
+        await fetchMembers();
+      } catch {
+        showToast('Network error. Check your connection.', 'error');
+      } finally {
+        inviteBtn.disabled = false;
+        inviteBtn.textContent = 'Send Invite';
+      }
+    });
+
+    async function handleReinvite(email: string) {
+      try {
+        const res = await window.__bp.fetch('/v1/team/invite', {
+          method: 'POST',
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json() as { email_sent?: boolean; invite_url?: string };
+        if (data.email_sent) {
+          showToast(`Re-invite sent to ${email}!`, 'success');
+        } else if (data.invite_url) {
+          try {
+            await navigator.clipboard.writeText(data.invite_url);
+            showToast('Email failed. Invite link copied to clipboard!', 'error');
+          } catch {
+            prompt('Email failed. Copy this invite link:', data.invite_url);
+          }
+        }
+      } catch {
+        showToast('Failed to re-invite', 'error');
+      }
+    }
+
+    async function handleRemove(id: string, email: string) {
+      if (!confirm(`Remove ${email} from the team?`)) return;
+      try {
+        const res = await window.__bp.fetch(`/v1/team/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast(`${email} removed`, 'success');
+          await fetchMembers();
+        } else {
+          showToast('Failed to remove member', 'error');
+        }
+      } catch {
+        showToast('Network error', 'error');
+      }
+    }
+
+    logoutBtn.addEventListener('click', async () => {
+      await window.__bp.fetch('/v1/auth/logout', { method: 'POST' });
+      window.__bp.logout();
+      window.location.href = '/login';
+    });
+
+    fetchMembers();
+  </script>
+</Layout>
