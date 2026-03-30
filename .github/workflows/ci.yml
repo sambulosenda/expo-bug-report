@@ -33,3 +33,18 @@ jobs:
       - run: npm ci --legacy-peer-deps
         working-directory: .
       - run: npx vitest run
+
+  dashboard:
+    name: Dashboard — build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --legacy-peer-deps
+        working-directory: .
+      - run: npm run build
