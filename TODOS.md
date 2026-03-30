@@ -142,3 +142,33 @@
 **Effort:** S (CC: ~15 min)
 **Depends on:** Phase 2 Stripe webhook handler.
 **Added:** 2026-03-30 via /plan-eng-review (outside voice finding)
+
+## KV caching for dashboard polling
+**Status:** TODO
+**Priority:** P2
+**What:** Add Cloudflare KV cache layer for dashboard polling. Write latest report timestamp to KV on ingest. Dashboard poll checks KV first, only queries D1 if new data exists.
+**Why:** D1 queries cost the same regardless of whether data changed. At 50+ concurrent dashboard users polling every 15s, D1 costs become material. KV reads are 10x cheaper.
+**Context:** Dashboard polls `GET /v1/reports/recent` every 15s. Without caching, every poll hits D1 even if no new reports. KV key: `latest_report:{user_id}` with timestamp. Poll handler reads KV, returns 304-equivalent if no change. Accept D1 cost at early scale.
+**Effort:** S (CC: ~20 min)
+**Depends on:** Dashboard shipping + usage growth indicating cost concern.
+**Added:** 2026-03-30 via /plan-ceo-review
+
+## Shared API client package
+**Status:** TODO
+**Priority:** P2
+**What:** Extract `@bugpulse/api-client` shared module for CLI, MCP server, and dashboard to import. Covers auth header attachment, error parsing, base URL resolution.
+**Why:** Three packages independently implement the same proxy API calling pattern. Drift between implementations causes subtle bugs (different error handling, missing headers).
+**Context:** CLI has `apiRequest()`, MCP has fetch calls, dashboard will add a third. Extract after dashboard ships (third consumer makes the abstraction justified). Shared module exports typed functions: `apiClient.getReports()`, `apiClient.createIssue()`, etc.
+**Effort:** S (CC: ~30 min)
+**Depends on:** Dashboard shipping (third consumer).
+**Added:** 2026-03-30 via /plan-ceo-review
+
+## Integration dedup / DRY refactor
+**Status:** TODO
+**Priority:** P3
+**What:** Extract shared integration interface from Linear/GitHub/Jira implementations. Consolidate `ensureLabels`, `formatIssueBody`, and issue creation into pluggable pattern.
+**Why:** Three integrations (~85-90 lines each) are copy-pasted with slight variations. Three `ensureLabels` implementations. Adding a field (e.g., "Environment") requires changes in 3+ places. Dashboard "Create Issue" button will reuse this code.
+**Context:** Current pattern works but violates DRY aggressively. Extract `IntegrationAdapter` interface with `createIssue(report)`, `formatBody(report)`, `ensureLabels(labels)`. Data-driven body templates instead of per-integration formatters.
+**Effort:** M (CC: ~45 min)
+**Depends on:** Next time integrations are modified.
+**Added:** 2026-03-30 via /plan-ceo-review (taste calibration finding)
