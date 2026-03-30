@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { lookupUser, verifyHmac, checkTierAccess } from './auth';
-import { checkDuplicate, updateHashWithIssueUrl, cleanupExpiredHashes } from './dedup';
+import { checkDuplicate, updateHashWithIssueUrl, cleanupExpiredHashes, computeHash } from './dedup';
 import { deriveLabels } from './labels';
 import { uploadScreenshot, getScreenshotUrl } from './r2';
 import { decrypt, encrypt } from './encrypt';
@@ -169,6 +169,34 @@ app.post('/v1/reports', requireAuth, async (c) => {
   // Update dedup hash with first successful issue URL
   if (issues.length > 0 && checkTierAccess(user.plan, 'dedup')) {
     await updateHashWithIssueUrl(c.env, user.id, report.screen, errorMsg, issues[0]!.url, report.description);
+  }
+
+  // Store failed integrations for replay
+  for (let i = 0; i < results.length; i++) {
+    if (results[i]!.status === 'rejected') {
+      const failedIntegration = activeIntegrations[i]!;
+      const errorMessage = (results[i] as PromiseRejectedResult).reason?.message ?? 'Unknown error';
+      c.executionCtx.waitUntil(
+        c.env.DB.prepare(
+          'INSERT INTO failed_reports (id, user_id, report_payload, integration_id, error_message) VALUES (?, ?, ?, ?, ?)',
+        ).bind(crypto.randomUUID(), user.id, JSON.stringify(report), failedIntegration.id, errorMessage).run().catch(() => {}),
+      );
+    }
+  }
+
+  // Create report_status rows for bidirectional feedback
+  const reportHash = errorMsg
+    ? await computeHash(report.screen, errorMsg, report.description)
+    : null;
+  if (reportHash && issues.length > 0) {
+    const pushToken = (report as any).pushToken ?? null;
+    for (const issue of issues) {
+      c.executionCtx.waitUntil(
+        c.env.DB.prepare(
+          'INSERT OR IGNORE INTO report_status (report_hash, user_id, issue_url, linear_issue_id, push_token) VALUES (?, ?, ?, ?, ?)',
+        ).bind(reportHash, user.id, issue.url, issue.externalId ?? null, pushToken).run().catch(() => {}),
+      );
+    }
   }
 
   // Fire-and-forget: spike detection + onboarding (non-blocking)
@@ -362,6 +390,198 @@ app.post('/v1/billing/portal', requireAuth, async (c) => {
   }
 });
 
+// --- Linear webhook (bidirectional feedback) ---
+app.post('/v1/webhooks/linear', async (c) => {
+  const signature = c.req.header('X-Linear-Signature') ?? '';
+  const body = await c.req.text();
+
+  // Find the integration that has a linear_webhook_secret
+  // We verify against all linear integrations until one matches
+  const integrations = await c.env.DB.prepare(
+    "SELECT user_id, config FROM integrations WHERE type = 'linear' AND enabled = 1",
+  ).all<{ user_id: string; config: string }>();
+
+  let matchedUserId: string | null = null;
+  for (const row of integrations.results ?? []) {
+    const config = JSON.parse(await decrypt(row.config, c.env.ENCRYPTION_KEY)) as Record<string, string>;
+    const secret = config.linear_webhook_secret;
+    if (!secret) continue;
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+    const expected = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (expected.length === signature.length) {
+      let mismatch = 0;
+      for (let i = 0; i < expected.length; i++) mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+      if (mismatch === 0) { matchedUserId = row.user_id; break; }
+    }
+  }
+
+  if (!matchedUserId) return c.json({ error: 'invalid_signature' }, 401);
+
+  let payload: any;
+  try { payload = JSON.parse(body); } catch { return c.json({ error: 'invalid_json' }, 400); }
+
+  // Only handle issue status changes to "done" categories
+  if (payload.type !== 'Issue' || payload.action !== 'update') {
+    return c.json({ ok: true });
+  }
+
+  const issueId = payload.data?.id;
+  const newState = payload.data?.state?.type; // 'completed', 'cancelled'
+  if (!issueId || (newState !== 'completed' && newState !== 'cancelled')) {
+    return c.json({ ok: true });
+  }
+
+  // Update all report_status rows for this issue
+  const rows = await c.env.DB.prepare(
+    'SELECT report_hash, push_token FROM report_status WHERE linear_issue_id = ? AND user_id = ?',
+  ).bind(issueId, matchedUserId).all<{ report_hash: string; push_token: string | null }>();
+
+  for (const row of rows.results ?? []) {
+    await c.env.DB.prepare(
+      "UPDATE report_status SET status = 'fixed', updated_at = datetime('now') WHERE report_hash = ? AND user_id = ?",
+    ).bind(row.report_hash, matchedUserId).run();
+
+    // Send push notification if token exists
+    if (row.push_token) {
+      c.executionCtx.waitUntil(sendPushNotification(row.push_token, payload.data?.title ?? 'Your reported issue'));
+    }
+  }
+
+  return c.json({ ok: true, updated: (rows.results ?? []).length });
+});
+
+async function sendPushNotification(token: string, issueTitle: string): Promise<void> {
+  try {
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: token,
+        title: 'Bug Fixed!',
+        body: `${issueTitle} was resolved`,
+        data: { type: 'bugpulse_status_update' },
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json() as { data?: { status?: string } };
+      if (data.data?.status === 'DeviceNotRegistered') {
+        // Clean up stale token — fire and forget
+      }
+    }
+  } catch {
+    // Push is best-effort
+  }
+}
+
+// --- Report status polling (bidirectional feedback) ---
+app.get('/v1/reports/status', requireAuth, async (c) => {
+  const user = c.get('user');
+  const hashesRaw = c.req.query('hashes') ?? '';
+  const hashes = hashesRaw.split(',').filter(Boolean);
+
+  if (hashes.length === 0) return c.json({ statuses: [] });
+  if (hashes.length > 50) return c.json({ error: 'validation_error', details: ['max 50 hashes per request'] }, 422);
+
+  const placeholders = hashes.map(() => '?').join(',');
+  const rows = await c.env.DB.prepare(
+    `SELECT report_hash, status, issue_url FROM report_status WHERE user_id = ? AND report_hash IN (${placeholders})`,
+  ).bind(user.id, ...hashes).all<{ report_hash: string; status: string; issue_url: string | null }>();
+
+  return c.json({ statuses: rows.results ?? [] });
+});
+
+// --- Report analytics ---
+app.get('/v1/analytics', requireAuth, async (c) => {
+  const user = c.get('user');
+  const fromDate = c.req.query('from') ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const toDate = c.req.query('to') ?? new Date().toISOString();
+
+  const topScreens = await c.env.DB.prepare(
+    'SELECT screen, COUNT(*) as count FROM report_hashes WHERE user_id = ? AND created_at >= ? AND created_at <= ? AND screen IS NOT NULL GROUP BY screen ORDER BY count DESC LIMIT 10',
+  ).bind(user.id, fromDate, toDate).all<{ screen: string; count: number }>();
+
+  const volumeByDay = await c.env.DB.prepare(
+    "SELECT date(created_at) as date, COUNT(*) as count FROM report_hashes WHERE user_id = ? AND created_at >= ? AND created_at <= ? GROUP BY date(created_at) ORDER BY date",
+  ).bind(user.id, fromDate, toDate).all<{ date: string; count: number }>();
+
+  const severityRows = await c.env.DB.prepare(
+    'SELECT severity, COUNT(*) as count FROM report_hashes WHERE user_id = ? AND created_at >= ? AND created_at <= ? AND severity IS NOT NULL GROUP BY severity',
+  ).bind(user.id, fromDate, toDate).all<{ severity: string; count: number }>();
+
+  const severityBreakdown: Record<string, number> = {};
+  for (const row of severityRows.results ?? []) severityBreakdown[row.severity] = row.count;
+
+  return c.json({
+    period: { from: fromDate, to: toDate },
+    topScreens: topScreens.results ?? [],
+    volumeByDay: volumeByDay.results ?? [],
+    severityBreakdown,
+  });
+});
+
+// --- Recent reports (for CLI watch polling) ---
+app.get('/v1/reports/recent', requireAuth, async (c) => {
+  const user = c.get('user');
+  const since = c.req.query('since') ?? new Date(Date.now() - 60000).toISOString();
+
+  const rows = await c.env.DB.prepare(
+    'SELECT hash, screen, severity, created_at FROM report_hashes WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT 50',
+  ).bind(user.id, since).all<{ hash: string; screen: string; severity: string; created_at: string }>();
+
+  return c.json({ reports: rows.results ?? [] });
+});
+
+// --- Failed reports (webhook replay) ---
+app.get('/v1/reports/failed', requireAuth, async (c) => {
+  const user = c.get('user');
+
+  const rows = await c.env.DB.prepare(
+    'SELECT id, integration_id, error_message, retries, created_at FROM failed_reports WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+  ).bind(user.id).all();
+
+  return c.json({ failed: rows.results ?? [] });
+});
+
+app.post('/v1/reports/replay', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ id?: string }>();
+  if (!body.id) return c.json({ error: 'validation_error', details: ['id required'] }, 422);
+
+  const row = await c.env.DB.prepare(
+    'SELECT * FROM failed_reports WHERE id = ? AND user_id = ?',
+  ).bind(body.id, user.id).first<{ id: string; report_payload: string; integration_id: string; retries: number }>();
+
+  if (!row) return c.json({ error: 'not_found' }, 404);
+  if (row.retries >= 3) return c.json({ error: 'max_retries_exceeded' }, 422);
+
+  const integration = await c.env.DB.prepare(
+    'SELECT type, config FROM integrations WHERE id = ? AND user_id = ?',
+  ).bind(row.integration_id, user.id).first<{ type: string; config: string }>();
+
+  if (!integration) return c.json({ error: 'integration_not_found' }, 404);
+
+  const report = JSON.parse(row.report_payload) as IncomingReport;
+  const config = JSON.parse(await decrypt(integration.config, c.env.ENCRYPTION_KEY)) as Record<string, string>;
+  const title = generateTitle(report);
+
+  try {
+    const result = await createIssue(integration.type as any, report, config, [], null, title);
+    // Success — delete the failed report
+    await c.env.DB.prepare('DELETE FROM failed_reports WHERE id = ?').bind(body.id).run();
+    return c.json({ success: true, issue: result });
+  } catch (error) {
+    // Still failing — increment retry count
+    await c.env.DB.prepare(
+      'UPDATE failed_reports SET retries = retries + 1, error_message = ? WHERE id = ?',
+    ).bind(error instanceof Error ? error.message : 'Unknown error', body.id).run();
+    return c.json({ error: 'replay_failed', retries: row.retries + 1 }, 502);
+  }
+});
+
 // --- 404 fallback ---
 app.all('*', (c) => c.json({ error: 'not_found' }, 404));
 
@@ -516,6 +736,17 @@ export default {
     const hashCleaned = await cleanupExpiredHashes(env);
     const spikeCleaned = await cleanupSpikeWindows(env);
     const graceExpired = await expireGracePeriods(env);
-    console.log(`[BugPulse Proxy] Cleaned ${hashCleaned} hashes, ${spikeCleaned} spike windows, ${graceExpired} grace periods expired`);
+
+    // Clean stale report_status rows (30-day TTL)
+    const statusCleaned = await env.DB.prepare(
+      "DELETE FROM report_status WHERE updated_at < datetime('now', '-30 days')",
+    ).run();
+
+    // Clean old failed_reports (7-day TTL)
+    const failedCleaned = await env.DB.prepare(
+      "DELETE FROM failed_reports WHERE created_at < datetime('now', '-7 days')",
+    ).run();
+
+    console.log(`[BugPulse Proxy] Cleaned ${hashCleaned} hashes, ${spikeCleaned} spike windows, ${graceExpired} grace periods, ${statusCleaned.meta.changes ?? 0} stale statuses, ${failedCleaned.meta.changes ?? 0} old failed reports`);
   },
 };

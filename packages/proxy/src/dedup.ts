@@ -1,6 +1,6 @@
 import type { Env } from './types';
 
-async function computeHash(screen: string, errorMessage: string | null, description?: string): Promise<string> {
+export async function computeHash(screen: string, errorMessage: string | null, description?: string): Promise<string> {
   // Include description in hash to avoid colliding all error-free bugs on the same screen
   const input = `${screen}:${errorMessage ?? ''}:${description?.slice(0, 100) ?? ''}`;
   const encoder = new TextEncoder();
