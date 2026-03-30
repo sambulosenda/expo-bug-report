@@ -13,6 +13,44 @@ import Layout from '../../layouts/Layout.astro';
   </header>
 
   <div class="container">
+    <!-- Analytics Overview -->
+    <div id="analytics-section" class="analytics-section" hidden>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-number" id="stat-total">—</div>
+          <div class="stat-label">Total Reports</div>
+        </div>
+        <div class="stat-card stat-card-crash">
+          <div class="stat-indicator" style="background:var(--red)"></div>
+          <div class="stat-number" id="stat-crash">—</div>
+          <div class="stat-label">Crashes</div>
+        </div>
+        <div class="stat-card stat-card-error">
+          <div class="stat-indicator" style="background:var(--yellow)"></div>
+          <div class="stat-number" id="stat-error">—</div>
+          <div class="stat-label">Errors</div>
+        </div>
+        <div class="stat-card stat-card-feedback">
+          <div class="stat-indicator" style="background:var(--accent)"></div>
+          <div class="stat-number" id="stat-feedback">—</div>
+          <div class="stat-label">Feedback</div>
+        </div>
+      </div>
+
+      <div class="sparkline-section">
+        <div class="sparkline-header">
+          <span class="sparkline-title">Last 7 days</span>
+          <span class="sparkline-total" id="sparkline-total"></span>
+        </div>
+        <div class="sparkline" id="sparkline"></div>
+      </div>
+
+      <div class="top-screens" id="top-screens-section" hidden>
+        <span class="top-screens-label">Top screens</span>
+        <div class="top-screens-list" id="top-screens"></div>
+      </div>
+    </div>
+
     <div class="toolbar">
       <div class="filters">
         <select id="severity-filter">
@@ -97,6 +135,134 @@ npx @bugpulse/cli init</code></pre>
       white-space: nowrap;
     }
 
+    /* Analytics */
+    .analytics-section {
+      margin-bottom: 20px;
+    }
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      position: relative;
+    }
+    .stat-indicator {
+      width: 4px;
+      height: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+      border-radius: var(--radius) 0 0 var(--radius);
+    }
+    .stat-number {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .sparkline-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .sparkline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .sparkline-title {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .sparkline-total {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .sparkline {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 64px;
+    }
+    .sparkline-bar-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+      justify-content: flex-end;
+    }
+    .sparkline-bar {
+      width: 100%;
+      background: var(--accent);
+      border-radius: 3px 3px 0 0;
+      min-height: 2px;
+      transition: height 0.3s ease;
+      opacity: 0.7;
+    }
+    .sparkline-bar:hover { opacity: 1; }
+    .sparkline-day {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .top-screens {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .top-screens-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .top-screens-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .screen-pill {
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-family: monospace;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .screen-pill:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .screen-pill-count {
+      color: var(--accent);
+      margin-left: 4px;
+      font-family: -apple-system, sans-serif;
+    }
+
+    @media (max-width: 640px) {
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+
     .empty-state {
       text-align: center;
       padding: 80px 20px;
@@ -125,6 +291,102 @@ npx @bugpulse/cli init</code></pre>
 
     let reports: any[] = [];
     let pollTimer: ReturnType<typeof setInterval>;
+
+    const analyticsSection = document.getElementById('analytics-section')!;
+    const statTotal = document.getElementById('stat-total')!;
+    const statCrash = document.getElementById('stat-crash')!;
+    const statError = document.getElementById('stat-error')!;
+    const statFeedback = document.getElementById('stat-feedback')!;
+    const sparklineEl = document.getElementById('sparkline')!;
+    const sparklineTotal = document.getElementById('sparkline-total')!;
+    const topScreensSection = document.getElementById('top-screens-section')!;
+    const topScreensEl = document.getElementById('top-screens')!;
+
+    async function fetchAnalytics() {
+      try {
+        const res = await window.__bp.fetch('/v1/analytics');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const sev = data.severityBreakdown || {};
+        const total = (sev.crash || 0) + (sev.error || 0) + (sev.feedback || 0);
+
+        statTotal.textContent = String(total);
+        statCrash.textContent = String(sev.crash || 0);
+        statError.textContent = String(sev.error || 0);
+        statFeedback.textContent = String(sev.feedback || 0);
+
+        // Sparkline
+        const days: {date: string; count: number}[] = data.volumeByDay || [];
+        if (days.length > 0) {
+          const max = Math.max(...days.map((d: any) => d.count), 1);
+          const dayTotal = days.reduce((s: number, d: any) => s + d.count, 0);
+          sparklineTotal.textContent = `${dayTotal} reports`;
+
+          const fragment = document.createDocumentFragment();
+          for (const d of days) {
+            const wrap = document.createElement('div');
+            wrap.className = 'sparkline-bar-wrap';
+
+            const bar = document.createElement('div');
+            bar.className = 'sparkline-bar';
+            bar.style.height = `${Math.max((d.count / max) * 100, 3)}%`;
+            bar.title = `${d.date}: ${d.count} reports`;
+
+            const label = document.createElement('span');
+            label.className = 'sparkline-day';
+            const dt = new Date(d.date + 'T00:00:00');
+            label.textContent = dt.toLocaleDateString('en', { weekday: 'short' }).slice(0, 3);
+
+            wrap.appendChild(bar);
+            wrap.appendChild(label);
+            fragment.appendChild(wrap);
+          }
+          sparklineEl.replaceChildren(fragment);
+        }
+
+        // Top screens
+        const screens: {screen: string; count: number}[] = data.topScreens || [];
+        if (screens.length > 0) {
+          topScreensSection.hidden = false;
+          const fragment = document.createDocumentFragment();
+          for (const s of screens.slice(0, 5)) {
+            const pill = document.createElement('span');
+            pill.className = 'screen-pill';
+            pill.textContent = s.screen;
+
+            const count = document.createElement('span');
+            count.className = 'screen-pill-count';
+            count.textContent = String(s.count);
+            pill.appendChild(count);
+
+            pill.addEventListener('click', () => {
+              // Filter reports to this screen
+              const sev = severityFilter.value;
+              const stat = statusFilter.value;
+              const filtered = reports.filter((r: any) =>
+                r.screen === s.screen && (!sev || r.severity === sev) && (!stat || r.status === stat)
+              );
+              emptyState.hidden = true;
+              const frag = document.createDocumentFragment();
+              for (const r of filtered) {
+                frag.appendChild(createReportCard(r));
+              }
+              reportList.replaceChildren(frag);
+            });
+
+            fragment.appendChild(pill);
+          }
+          topScreensEl.replaceChildren(fragment);
+        }
+
+        if (total > 0) {
+          analyticsSection.hidden = false;
+        }
+      } catch {
+        // Silent fail — analytics is supplementary
+      }
+    }
 
     function timeAgo(dateStr: string): string {
       const diff = Date.now() - new Date(dateStr).getTime();
@@ -221,20 +483,22 @@ npx @bugpulse/cli init</code></pre>
     }
 
     fetchReports();
-    pollTimer = setInterval(fetchReports, 15000);
+    fetchAnalytics();
+    pollTimer = setInterval(() => { fetchReports(); fetchAnalytics(); }, 15000);
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         clearInterval(pollTimer);
       } else {
         fetchReports();
-        pollTimer = setInterval(fetchReports, 15000);
+        fetchAnalytics();
+        pollTimer = setInterval(() => { fetchReports(); fetchAnalytics(); }, 15000);
       }
     });
 
     severityFilter.addEventListener('change', renderReports);
     statusFilter.addEventListener('change', renderReports);
-    refreshBtn.addEventListener('click', fetchReports);
+    refreshBtn.addEventListener('click', () => { fetchReports(); fetchAnalytics(); });
 
     logoutBtn.addEventListener('click', async () => {
       await window.__bp.fetch('/v1/auth/logout', { method: 'POST' });
