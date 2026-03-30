@@ -136,6 +136,30 @@ app.post('/v1/reports', requireAuth, async (c) => {
     }
   }
 
+  // Persist full report for dashboard (fail-open: if D1 write fails, continue to integrations)
+  const reportId = crypto.randomUUID();
+  const severity = report.diagnostics?.lastError ? 'crash'
+    : report.description?.toLowerCase().match(/error|fail|broke|crash/) ? 'error'
+    : 'feedback';
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO reports (id, user_id, hash, screen, severity, description, diagnostics, screenshot_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).bind(
+      reportId,
+      user.id,
+      errorMsg ? await computeHash(report.screen, errorMsg, report.description) : crypto.randomUUID(),
+      report.screen,
+      severity,
+      report.description,
+      report.diagnostics ? JSON.stringify(report.diagnostics) : null,
+      report.screenshotId ?? null,
+      'new',
+      new Date().toISOString(),
+    ).run();
+  } catch (err) {
+    console.error('[BugPulse Proxy] Failed to persist report to dashboard:', err);
+  }
+
   // Get user's integrations (all fire, routing rules removed)
   const integrations = await c.env.DB.prepare(
     'SELECT * FROM integrations WHERE user_id = ? AND enabled = 1',
@@ -390,6 +414,49 @@ app.post('/v1/billing/portal', requireAuth, async (c) => {
   }
 });
 
+// --- Stripe Checkout ---
+app.post('/v1/checkout', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ plan?: string }>();
+
+  if (!body.plan || (body.plan !== 'starter' && body.plan !== 'pro')) {
+    return c.json({ error: 'validation_error', details: ['plan must be "starter" or "pro"'] }, 422);
+  }
+
+  if (user.plan === body.plan) {
+    return c.json({ error: 'already_subscribed', current_plan: user.plan }, 409);
+  }
+
+  const priceId = body.plan === 'starter'
+    ? c.env.STRIPE_STARTER_PRICE_ID
+    : c.env.STRIPE_PRO_PRICE_ID;
+
+  if (!priceId) {
+    console.error(`[BugPulse Proxy] Missing STRIPE_${body.plan.toUpperCase()}_PRICE_ID env var`);
+    return c.json({ error: 'service_configuration_error' }, 500);
+  }
+
+  const { default: Stripe } = await import('stripe');
+  const stripe = new Stripe(c.env.STRIPE_SECRET_KEY);
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: user.stripe_customer_id ? undefined : user.email,
+      customer: user.stripe_customer_id ?? undefined,
+      metadata: { plan: body.plan, bugpulse_user_id: user.id },
+      success_url: 'https://bugpulse.dev/?checkout=success',
+      cancel_url: 'https://bugpulse.dev/?checkout=cancel',
+    });
+
+    return c.json({ url: session.url });
+  } catch (error) {
+    console.error('[BugPulse Proxy] Stripe checkout error:', error);
+    return c.json({ error: 'payment_provider_error' }, 502);
+  }
+});
+
 // --- Linear webhook (bidirectional feedback) ---
 app.post('/v1/webhooks/linear', async (c) => {
   const signature = c.req.header('X-Linear-Signature') ?? '';
@@ -582,6 +649,278 @@ app.post('/v1/reports/replay', requireAuth, async (c) => {
   }
 });
 
+// --- Dashboard auth: session-based ---
+async function requireDashboardAuth(c: any, next: any) {
+  // Check session cookie first
+  const sessionToken = c.req.header('Cookie')?.match(/bp_session=([^;]+)/)?.[1];
+  if (sessionToken) {
+    const session = await c.env.DB.prepare(
+      "SELECT user_id, type, team_member_id, expires_at FROM sessions WHERE token = ? AND expires_at > datetime('now')",
+    ).bind(sessionToken).first() as { user_id: string; type: string; team_member_id: string | null; expires_at: string } | null;
+
+    if (session) {
+      const user = await c.env.DB.prepare(
+        'SELECT * FROM users WHERE id = ?',
+      ).bind(session.user_id).first() as User | null;
+
+      if (user) {
+        c.set('user', user);
+        c.set('sessionType', session.type);
+        c.set('teamMemberId', session.team_member_id);
+        return next();
+      }
+    }
+  }
+
+  // Fall back to API key header
+  const apiKey = c.req.header('X-BugPulse-Key');
+  if (apiKey) {
+    const user = await lookupUser(apiKey, c.env);
+    if (user) {
+      c.set('user', user);
+      c.set('sessionType', 'developer');
+      return next();
+    }
+  }
+
+  return c.json({ error: 'unauthorized' }, 401);
+}
+
+// --- Dashboard login (API key → session) ---
+app.post('/v1/auth/login', async (c) => {
+  const body = await c.req.json<{ api_key?: string }>();
+  if (!body.api_key) return c.json({ error: 'validation_error', details: ['api_key required'] }, 422);
+
+  const user = await lookupUser(body.api_key, c.env);
+  if (!user) return c.json({ error: 'invalid_api_key' }, 401);
+
+  const token = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  await c.env.DB.prepare(
+    'INSERT INTO sessions (token, user_id, type, expires_at) VALUES (?, ?, ?, ?)',
+  ).bind(token, user.id, 'developer', expiresAt).run();
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Set-Cookie': `bp_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 60 * 60}`,
+    },
+  });
+});
+
+// --- Dashboard logout ---
+app.post('/v1/auth/logout', requireDashboardAuth, async (c) => {
+  const sessionToken = c.req.header('Cookie')?.match(/bp_session=([^;]+)/)?.[1];
+  if (sessionToken) {
+    await c.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(sessionToken).run();
+  }
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Set-Cookie': 'bp_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0',
+    },
+  });
+});
+
+// --- Magic link auth ---
+app.get('/v1/auth/magic/:token', async (c) => {
+  const token = c.req.param('token');
+
+  const row = await c.env.DB.prepare(
+    "SELECT team_member_id, user_id, used, expires_at FROM magic_tokens WHERE token = ? AND expires_at > datetime('now')",
+  ).bind(token).first<{ team_member_id: string; user_id: string; used: number; expires_at: string }>();
+
+  if (!row) return c.json({ error: 'token_expired_or_invalid' }, 401);
+  if (row.used) return c.json({ error: 'token_already_used' }, 401);
+
+  // Mark token as used
+  await c.env.DB.prepare('UPDATE magic_tokens SET used = 1 WHERE token = ?').bind(token).run();
+
+  // Create session
+  const sessionToken = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  await c.env.DB.prepare(
+    'INSERT INTO sessions (token, user_id, type, team_member_id, expires_at) VALUES (?, ?, ?, ?, ?)',
+  ).bind(sessionToken, row.user_id, 'team_member', row.team_member_id, expiresAt).run();
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Set-Cookie': `bp_session=${sessionToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 60 * 60}`,
+    },
+  });
+});
+
+// --- Team invite ---
+app.post('/v1/team/invite', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ email?: string }>();
+
+  if (!body.email || !body.email.includes('@')) {
+    return c.json({ error: 'validation_error', details: ['valid email required'] }, 422);
+  }
+
+  // Check max team size (20 members)
+  const count = await c.env.DB.prepare(
+    'SELECT COUNT(*) as count FROM team_members WHERE user_id = ?',
+  ).bind(user.id).first<{ count: number }>();
+  if ((count?.count ?? 0) >= 20) {
+    return c.json({ error: 'team_limit_reached', max: 20 }, 422);
+  }
+
+  // Check for duplicate
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM team_members WHERE user_id = ? AND email = ?',
+  ).bind(user.id, body.email).first();
+  if (existing) {
+    return c.json({ error: 'already_invited' }, 409);
+  }
+
+  const memberId = crypto.randomUUID();
+  await c.env.DB.prepare(
+    'INSERT INTO team_members (id, user_id, email, invited_by) VALUES (?, ?, ?, ?)',
+  ).bind(memberId, user.id, body.email, user.id).run();
+
+  // Generate magic link token
+  const magicToken = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  await c.env.DB.prepare(
+    'INSERT INTO magic_tokens (token, team_member_id, user_id, expires_at) VALUES (?, ?, ?, ?)',
+  ).bind(magicToken, memberId, user.id, expiresAt).run();
+
+  const inviteUrl = `https://bugpulse.dev/auth/magic?token=${magicToken}`;
+
+  // Try to send email via Resend (fail-open: return manual link if Resend is down)
+  try {
+    const resendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${(c.env as any).RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'BugPulse <noreply@bugpulse.dev>',
+        to: body.email,
+        subject: 'You\'ve been invited to BugPulse',
+        html: `<p>You've been invited to view bug reports on BugPulse.</p><p><a href="${inviteUrl}">Click here to access the dashboard</a></p><p>This link expires in 24 hours.</p>`,
+      }),
+    });
+
+    if (!resendRes.ok) {
+      throw new Error(`Resend returned ${resendRes.status}`);
+    }
+
+    return c.json({ ok: true, email_sent: true });
+  } catch (err) {
+    console.error('[BugPulse Proxy] Resend email failed:', err);
+    return c.json({ ok: true, email_sent: false, invite_url: inviteUrl, message: 'Email delivery failed. Share this link manually.' }, 502);
+  }
+});
+
+// --- Team management ---
+app.get('/v1/team', requireAuth, async (c) => {
+  const user = c.get('user');
+  const rows = await c.env.DB.prepare(
+    'SELECT id, email, created_at FROM team_members WHERE user_id = ?',
+  ).bind(user.id).all();
+  return c.json({ members: rows.results ?? [] });
+});
+
+app.delete('/v1/team/:id', requireAuth, async (c) => {
+  const user = c.get('user');
+  const memberId = c.req.param('id');
+
+  // Delete member and their sessions
+  await c.env.DB.prepare('DELETE FROM team_members WHERE id = ? AND user_id = ?').bind(memberId, user.id).run();
+  await c.env.DB.prepare('DELETE FROM sessions WHERE team_member_id = ?').bind(memberId).run();
+
+  return c.json({ deleted: true });
+});
+
+// --- Dashboard report endpoints ---
+app.get('/v1/dashboard/reports', requireDashboardAuth, async (c) => {
+  const user = c.get('user');
+  const page = parseInt(c.req.query('page') ?? '1', 10);
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '50', 10), 50);
+  const screen = c.req.query('screen');
+  const severity = c.req.query('severity');
+  const offset = (page - 1) * limit;
+
+  let query = 'SELECT id, screen, severity, description, status, screenshot_id, created_at FROM reports WHERE user_id = ?';
+  const params: any[] = [user.id];
+
+  if (screen) {
+    query += ' AND screen = ?';
+    params.push(screen);
+  }
+  if (severity) {
+    query += ' AND severity = ?';
+    params.push(severity);
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const rows = await c.env.DB.prepare(query).bind(...params).all();
+  return c.json({ reports: rows.results ?? [], page, limit });
+});
+
+app.get('/v1/dashboard/reports/:id', requireDashboardAuth, async (c) => {
+  const user = c.get('user');
+  const reportId = c.req.param('id');
+
+  const report = await c.env.DB.prepare(
+    'SELECT * FROM reports WHERE id = ? AND user_id = ?',
+  ).bind(reportId, user.id).first();
+
+  if (!report) return c.json({ error: 'not_found' }, 404);
+  return c.json({ report });
+});
+
+app.patch('/v1/reports/:id', requireDashboardAuth, async (c) => {
+  const user = c.get('user');
+  const reportId = c.req.param('id');
+  const body = await c.req.json<{ status?: string }>();
+
+  if (!body.status || !['new', 'triaged', 'fixed'].includes(body.status)) {
+    return c.json({ error: 'validation_error', details: ['status must be "new", "triaged", or "fixed"'] }, 422);
+  }
+
+  const result = await c.env.DB.prepare(
+    'UPDATE reports SET status = ? WHERE id = ? AND user_id = ?',
+  ).bind(body.status, reportId, user.id).run();
+
+  if ((result.meta.changes ?? 0) === 0) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  return c.json({ ok: true, status: body.status });
+});
+
+// --- Public stats (unauthenticated, rate limited, cached) ---
+let statsCache: { value: number | null; cachedAt: number } = { value: null, cachedAt: 0 };
+
+app.get('/v1/stats/public', async (c) => {
+  const now = Date.now();
+  if (statsCache.value !== null && now - statsCache.cachedAt < 5 * 60 * 1000) {
+    return c.json({ totalReports: statsCache.value });
+  }
+
+  try {
+    const row = await c.env.DB.prepare('SELECT COUNT(*) as count FROM reports').first<{ count: number }>();
+    statsCache = { value: row?.count ?? 0, cachedAt: now };
+    return c.json({ totalReports: statsCache.value });
+  } catch {
+    return c.json({ totalReports: statsCache.value });
+  }
+});
+
 // --- 404 fallback ---
 app.all('*', (c) => c.json({ error: 'not_found' }, 404));
 
@@ -747,6 +1086,21 @@ export default {
       "DELETE FROM failed_reports WHERE created_at < datetime('now', '-7 days')",
     ).run();
 
-    console.log(`[BugPulse Proxy] Cleaned ${hashCleaned} hashes, ${spikeCleaned} spike windows, ${graceExpired} grace periods, ${statusCleaned.meta.changes ?? 0} stale statuses, ${failedCleaned.meta.changes ?? 0} old failed reports`);
+    // Clean old reports (30-day TTL)
+    const reportsCleaned = await env.DB.prepare(
+      "DELETE FROM reports WHERE created_at < datetime('now', '-30 days')",
+    ).run();
+
+    // Clean expired sessions
+    const sessionsCleaned = await env.DB.prepare(
+      "DELETE FROM sessions WHERE expires_at < datetime('now')",
+    ).run();
+
+    // Clean expired magic tokens (24h TTL)
+    const tokensCleaned = await env.DB.prepare(
+      "DELETE FROM magic_tokens WHERE expires_at < datetime('now')",
+    ).run();
+
+    console.log(`[BugPulse Proxy] Cleaned ${hashCleaned} hashes, ${spikeCleaned} spike windows, ${graceExpired} grace periods, ${statusCleaned.meta.changes ?? 0} stale statuses, ${failedCleaned.meta.changes ?? 0} old failed reports, ${reportsCleaned.meta.changes ?? 0} old reports, ${sessionsCleaned.meta.changes ?? 0} expired sessions, ${tokensCleaned.meta.changes ?? 0} expired tokens`);
   },
 };
