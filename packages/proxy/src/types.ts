@@ -5,6 +5,7 @@ export interface Env {
   ENCRYPTION_KEY: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
+  ALLOWED_ORIGINS: string; // comma-separated, e.g. "https://bugpulse.dev,http://localhost:3000"
 }
 
 export interface User {
@@ -68,4 +69,5 @@ export interface IssueResult {
   destination: string;
   url: string;
   key: string;
+  externalId?: string;
 }

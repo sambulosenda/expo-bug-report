@@ -37,6 +37,8 @@
     .result .warning { color: #f59e0b; font-size: 0.8rem; margin-top: 12px; }
     .cli-alt { margin-top: 16px; font-size: 0.85rem; color: #737373; }
     .cli-alt code { background: #262626; padding: 2px 8px; border-radius: 4px; color: #e5e5e5; }
+    .tier-btn { display: inline-block; margin-top: 12px; padding: 10px 20px; border-radius: 8px; background: #3b82f6; color: #fff; text-decoration: none; font-weight: 600; font-size: 0.9rem; text-align: center; }
+    .tier-btn:hover { background: #2563eb; }
     footer { text-align: center; margin-top: 48px; font-size: 0.8rem; color: #525252; }
     footer a { color: #737373; }
   </style>
@@ -64,7 +66,7 @@
       </div>
     </div>
 
-    <div class="pricing">
+    <div class="pricing" id="pricing">
       <div class="tier">
         <h3>Free</h3>
         <div class="price">$0</div>
@@ -84,6 +86,7 @@
           <li>Spike alerts</li>
           <li>500 reports/mo</li>
         </ul>
+        <a id="starter-link" class="tier-btn" style="display:none" href="#">Get Starter</a>
       </div>
       <div class="tier">
         <h3>Pro</h3>
@@ -94,6 +97,7 @@
           <li>Report enrichment</li>
           <li>Unlimited reports</li>
         </ul>
+        <a id="pro-link" class="tier-btn" style="display:none" href="#">Get Pro</a>
       </div>
     </div>
 
@@ -120,6 +124,25 @@
   <script>
     const PROXY_URL = 'https://bugpulse-proxy.sambulo.workers.dev';
 
+    // Set these to your Stripe Payment Link URLs after creating them in the Stripe dashboard.
+    // Buttons stay hidden until real URLs are configured.
+    const STRIPE_STARTER_LINK = '';
+    const STRIPE_PRO_LINK = '';
+
+    function showPricingLinks(email) {
+      if (!STRIPE_STARTER_LINK || !STRIPE_PRO_LINK) return; // Don't show broken links
+      const starterLink = document.getElementById('starter-link');
+      const proLink = document.getElementById('pro-link');
+      if (starterLink) {
+        starterLink.href = STRIPE_STARTER_LINK + '?prefilled_email=' + encodeURIComponent(email);
+        starterLink.style.display = 'inline-block';
+      }
+      if (proLink) {
+        proLink.href = STRIPE_PRO_LINK + '?prefilled_email=' + encodeURIComponent(email);
+        proLink.style.display = 'inline-block';
+      }
+    }
+
     async function signup() {
       const email = document.getElementById('email').value.trim();
       if (!email || !email.includes('@')) return alert('Enter a valid email.');
@@ -136,7 +159,7 @@
         });
 
         if (res.status === 409) {
-          alert('This email is already registered.');
+          alert('This email is already registered. Use the CLI to recover your keys: npx @bugpulse/cli recover');
           return;
         }
 
@@ -150,6 +173,8 @@
         document.getElementById('hmac-secret').textContent = data.hmac_secret;
         document.getElementById('result').style.display = 'block';
         btn.textContent = 'Done';
+
+        showPricingLinks(email);
       } catch (e) {
         alert('Network error. Check your connection.');
       } finally {

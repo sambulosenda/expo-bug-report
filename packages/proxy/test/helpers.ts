@@ -92,7 +92,18 @@ class MockD1Database {
       return user ? [user] : [];
     }
 
-    // UPDATE users SET api_key
+    // UPDATE users SET api_key = ?, hmac_secret = ? WHERE id = ? (recover)
+    if (sqlLower.includes('update') && sqlLower.includes('users') && sqlLower.includes('api_key') && sqlLower.includes('hmac_secret')) {
+      const user = this.users.get(params[2]);
+      if (user) {
+        user.api_key = params[0];
+        user.hmac_secret = params[1];
+        return 1 as any;
+      }
+      return 0 as any;
+    }
+
+    // UPDATE users SET api_key (rotate)
     if (sqlLower.includes('update') && sqlLower.includes('users') && sqlLower.includes('api_key')) {
       const user = this.users.get(params[1]);
       if (user) {
@@ -195,6 +206,7 @@ export function createMockEnv(): Env {
     ENCRYPTION_KEY: 'test-encryption-key-32-bytes-ok!',
     STRIPE_SECRET_KEY: 'sk_test_fake',
     STRIPE_WEBHOOK_SECRET: 'whsec_test_fake',
+    ALLOWED_ORIGINS: '*',
   };
 }
 

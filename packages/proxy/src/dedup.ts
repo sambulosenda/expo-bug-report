@@ -29,10 +29,11 @@ export async function checkDuplicate(
 
   // Insert hash for future dedup (best-effort, may race across PoPs)
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const severity = errorMessage ? 'crash' : 'feedback';
   try {
     await env.DB.prepare(
-      'INSERT INTO report_hashes (hash, user_id, expires_at) VALUES (?, ?, ?)',
-    ).bind(hash, userId, expiresAt).run();
+      'INSERT INTO report_hashes (hash, user_id, expires_at, severity, screen) VALUES (?, ?, ?, ?, ?)',
+    ).bind(hash, userId, expiresAt, severity, screen).run();
   } catch {
     // Race condition or D1 error — continue, don't block the report
   }

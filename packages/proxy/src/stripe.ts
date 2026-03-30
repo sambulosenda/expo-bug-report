@@ -38,11 +38,30 @@ export async function handleStripeWebhook(
       const customerId = session.customer as string;
 
       if (email) {
-        // Link Stripe customer to BugPulse user + upgrade plan
         const plan = getPlanFromSession(session);
-        await env.DB.prepare(
+
+        // Try to update existing user first
+        const updateResult = await env.DB.prepare(
           'UPDATE users SET stripe_customer_id = ?, plan = ?, grace_expires_at = NULL WHERE email = ?',
         ).bind(customerId, plan, email).run();
+
+        // If no user exists (paid before signup), create the account
+        if ((updateResult.meta.changes ?? 0) === 0) {
+          const id = crypto.randomUUID();
+          const apiKey = `bp_${crypto.randomUUID().replace(/-/g, '')}`;
+          const hmacSecret = `bps_${crypto.randomUUID().replace(/-/g, '')}`;
+          const insertResult = await env.DB.prepare(
+            'INSERT OR IGNORE INTO users (id, email, api_key, hmac_secret, stripe_customer_id, plan) VALUES (?, ?, ?, ?, ?, ?)',
+          ).bind(id, email, apiKey, hmacSecret, customerId, plan).run();
+
+          // Race: if signup happened between UPDATE and INSERT, INSERT was ignored.
+          // Retry the UPDATE to ensure the plan is applied.
+          if ((insertResult.meta.changes ?? 0) === 0) {
+            await env.DB.prepare(
+              'UPDATE users SET stripe_customer_id = ?, plan = ?, grace_expires_at = NULL WHERE email = ?',
+            ).bind(customerId, plan, email).run();
+          }
+        }
       }
       break;
     }

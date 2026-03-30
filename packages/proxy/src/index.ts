@@ -21,7 +21,11 @@ type AppEnv = { Bindings: Env; Variables: { user: User } };
 export const app = new Hono<AppEnv>();
 
 // --- CORS ---
-app.use('*', cors());
+app.use('*', (c, next) => {
+  const allowedRaw = c.env.ALLOWED_ORIGINS || '*';
+  const origins = allowedRaw === '*' ? '*' : allowedRaw.split(',').map((s: string) => s.trim());
+  return cors({ origin: origins })(c, next);
+});
 
 // --- Auth middleware (reusable) ---
 async function requireAuth(c: any, next: any) {
@@ -61,12 +65,8 @@ app.post('/v1/signup', async (c) => {
 });
 
 // --- Report ingest ---
-app.post('/v1/reports', async (c) => {
-  const apiKey = c.req.header('X-BugPulse-Key');
-  if (!apiKey) return c.json({ error: 'invalid_api_key' }, 403);
-
-  const user = await lookupUser(apiKey, c.env);
-  if (!user) return c.json({ error: 'invalid_api_key' }, 403);
+app.post('/v1/reports', requireAuth, async (c) => {
+  const user = c.get('user');
 
   if (!checkTierAccess(user.plan, 'proxy')) {
     return c.json({ error: 'upgrade_required', feature: 'proxy', plan_required: 'starter' }, 402);
@@ -294,6 +294,72 @@ app.post('/v1/rotate-key', requireAuth, async (c) => {
   ).bind(newKey, user.id).run();
 
   return c.json({ api_key: newKey });
+});
+
+// --- Account recovery (no auth — user lost their key) ---
+const recoverAttempts = new Map<string, { count: number; firstAttempt: number }>();
+const MAX_RECOVER_ATTEMPTS = 3;
+const RECOVER_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+app.post('/v1/recover', async (c) => {
+  const body = await c.req.json<{ email?: string }>();
+  if (!body.email) {
+    return c.json({ error: 'validation_error', details: ['email required'] }, 422);
+  }
+
+  // Rate limit: 3 attempts per email per hour
+  const now = Date.now();
+  const entry = recoverAttempts.get(body.email);
+  if (entry && now - entry.firstAttempt < RECOVER_WINDOW_MS && entry.count >= MAX_RECOVER_ATTEMPTS) {
+    return c.json({ error: 'rate_limited', retry_after: Math.ceil((entry.firstAttempt + RECOVER_WINDOW_MS - now) / 1000) }, 429);
+  }
+
+  const user = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE email = ?',
+  ).bind(body.email).first<{ id: string }>();
+
+  if (!user) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  // Track attempt
+  if (!entry || now - entry.firstAttempt >= RECOVER_WINDOW_MS) {
+    recoverAttempts.set(body.email, { count: 1, firstAttempt: now });
+  } else {
+    entry.count++;
+  }
+
+  // Generate new credentials (invalidates old ones)
+  const newKey = `bp_${crypto.randomUUID().replace(/-/g, '')}`;
+  const newSecret = `bps_${crypto.randomUUID().replace(/-/g, '')}`;
+
+  await c.env.DB.prepare(
+    'UPDATE users SET api_key = ?, hmac_secret = ? WHERE id = ?',
+  ).bind(newKey, newSecret, user.id).run();
+
+  return c.json({ api_key: newKey, hmac_secret: newSecret });
+});
+
+// --- Billing portal ---
+app.post('/v1/billing/portal', requireAuth, async (c) => {
+  const user = c.get('user');
+
+  if (!user.stripe_customer_id) {
+    return c.json({ error: 'no_subscription' }, 422);
+  }
+
+  const { default: Stripe } = await import('stripe');
+  const stripe = new Stripe(c.env.STRIPE_SECRET_KEY);
+
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripe_customer_id,
+      return_url: 'https://bugpulse.dev',
+    });
+    return c.json({ url: session.url });
+  } catch {
+    return c.json({ error: 'payment_provider_error' }, 502);
+  }
 });
 
 // --- 404 fallback ---

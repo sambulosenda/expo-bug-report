@@ -25,6 +25,7 @@ export async function createLinearIssue(
       issueCreate(input: $input) {
         success
         issue {
+          id
           identifier
           url
         }
@@ -63,7 +64,7 @@ export async function createLinearIssue(
     data?: {
       issueCreate?: {
         success: boolean;
-        issue?: { identifier: string; url: string };
+        issue?: { id: string; identifier: string; url: string };
       };
     };
     errors?: Array<{ message: string }>;
@@ -82,6 +83,7 @@ export async function createLinearIssue(
     destination: 'linear',
     url: issue.url,
     key: issue.identifier,
+    externalId: issue.id,
   };
 }
 
