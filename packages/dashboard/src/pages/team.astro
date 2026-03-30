@@ -162,7 +162,7 @@ import Layout from '../layouts/Layout.astro';
 
         const data = await res.json() as { ok?: boolean; error?: string; email_sent?: boolean; invite_url?: string };
 
-        if (!res.ok) {
+        if (!res.ok && !data.ok) {
           if (data.error === 'team_limit_reached') {
             showToast('Team limit reached (max 20 members)', 'error');
           } else {
@@ -180,6 +180,8 @@ import Layout from '../layouts/Layout.astro';
           } catch {
             prompt('Email failed. Copy this invite link:', data.invite_url);
           }
+        } else if (data.ok) {
+          showToast(`Invite sent to ${email}!`, 'success');
         }
 
         inviteEmail.value = '';
