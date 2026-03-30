@@ -1,120 +1,114 @@
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { lookupUser, verifyHmac, checkTierAccess } from './auth';
 import { checkDuplicate, updateHashWithIssueUrl, cleanupExpiredHashes } from './dedup';
 import { deriveLabels } from './labels';
-import { uploadScreenshot } from './r2';
+import { uploadScreenshot, getScreenshotUrl } from './r2';
 import { decrypt, encrypt } from './encrypt';
 import { createLinearIssue, addLinearComment } from './integrations/linear';
 import { createGithubIssue, addGithubComment } from './integrations/github';
 import { createJiraIssue, addJiraComment } from './integrations/jira';
-import type { Env, IncomingReport, IntegrationRow, IssueResult, QueueMessage, RoutingConditions } from './types';
+import { trackSpike, cleanupSpikeWindows } from './spike';
+import { checkAndSendOnboarding } from './onboarding';
+import { handleStripeWebhook, expireGracePeriods } from './stripe';
+import type { Env, IncomingReport, IntegrationRow, IssueResult, QueueMessage, User } from './types';
 
 const VALID_INTEGRATION_TYPES = new Set(['linear', 'github', 'jira']);
-const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2MB
+const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5MB
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
+type AppEnv = { Bindings: Env; Variables: { user: User } };
 
-    if (request.method === 'GET' && url.pathname === '/v1/health') {
-      return json({ status: 'ok' });
-    }
+const app = new Hono<AppEnv>();
 
-    if (request.method === 'POST' && url.pathname === '/v1/reports') {
-      return handleReport(request, env);
-    }
+// --- CORS ---
+app.use('*', cors());
 
-    if (request.method === 'POST' && url.pathname === '/v1/signup') {
-      return handleSignup(request, env);
-    }
+// --- Auth middleware (reusable) ---
+async function requireAuth(c: any, next: any) {
+  const apiKey = c.req.header('X-BugPulse-Key');
+  if (!apiKey) return c.json({ error: 'invalid_api_key' }, 403);
 
-    if (request.method === 'POST' && url.pathname === '/v1/integrations') {
-      return handleCreateIntegration(request, env);
-    }
+  const user = await lookupUser(apiKey, c.env);
+  if (!user) return c.json({ error: 'invalid_api_key' }, 403);
 
-    if (request.method === 'GET' && url.pathname === '/v1/integrations') {
-      return handleListIntegrations(request, env);
-    }
+  c.set('user', user);
+  return next();
+}
 
-    if (request.method === 'DELETE' && url.pathname.startsWith('/v1/integrations/')) {
-      return handleDeleteIntegration(request, env, url.pathname.split('/').pop()!);
-    }
+// --- Health ---
+app.get('/v1/health', (c) => c.json({ status: 'ok' }));
 
-    if (request.method === 'POST' && url.pathname === '/v1/routing-rules') {
-      return handleCreateRoutingRule(request, env);
-    }
+// --- Signup (no auth) ---
+app.post('/v1/signup', async (c) => {
+  const body = await c.req.json<{ email?: string }>();
+  if (!body.email) {
+    return c.json({ error: 'validation_error', details: ['email required'] }, 422);
+  }
 
-    return json({ error: 'not_found' }, 404);
-  },
+  const id = crypto.randomUUID();
+  const apiKey = `bp_${crypto.randomUUID().replace(/-/g, '')}`;
+  const hmacSecret = `bps_${crypto.randomUUID().replace(/-/g, '')}`;
 
-  async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
-    for (const msg of batch.messages) {
-      try {
-        await processQueueMessage(msg.body, env);
-        msg.ack();
-      } catch (error) {
-        console.error('[BugPulse Proxy] Queue consumer error:', error);
-        msg.retry();
-      }
-    }
-  },
+  const result = await c.env.DB.prepare(
+    'INSERT OR IGNORE INTO users (id, email, api_key, hmac_secret, plan) VALUES (?, ?, ?, ?, ?)',
+  ).bind(id, body.email, apiKey, hmacSecret, 'free').run();
 
-  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
-    const cleaned = await cleanupExpiredHashes(env);
-    console.log(`[BugPulse Proxy] Cleaned ${cleaned} expired hashes`);
-  },
-};
+  if (result.meta.changes === 0) {
+    return c.json({ error: 'email_exists' }, 409);
+  }
 
-// --- Report handling ---
+  return c.json({ api_key: apiKey, hmac_secret: hmacSecret });
+});
 
-async function handleReport(request: Request, env: Env): Promise<Response> {
-  // Auth
-  const apiKey = request.headers.get('X-BugPulse-Key');
-  if (!apiKey) return json({ error: 'invalid_api_key' }, 403);
+// --- Report ingest ---
+app.post('/v1/reports', async (c) => {
+  const apiKey = c.req.header('X-BugPulse-Key');
+  if (!apiKey) return c.json({ error: 'invalid_api_key' }, 403);
 
-  const user = await lookupUser(apiKey, env);
-  if (!user) return json({ error: 'invalid_api_key' }, 403);
+  const user = await lookupUser(apiKey, c.env);
+  if (!user) return c.json({ error: 'invalid_api_key' }, 403);
 
-  // Free tier shouldn't reach the proxy
   if (!checkTierAccess(user.plan, 'proxy')) {
-    return json({ error: 'upgrade_required', feature: 'proxy', plan_required: 'starter' }, 402);
+    return c.json({ error: 'upgrade_required', feature: 'proxy', plan_required: 'starter' }, 402);
   }
 
   // Body size check
-  const contentLength = parseInt(request.headers.get('Content-Length') ?? '0', 10);
+  const contentLength = parseInt(c.req.header('Content-Length') ?? '0', 10);
   if (contentLength > MAX_BODY_BYTES) {
-    return json({ error: 'payload_too_large' }, 413);
+    return c.json({ error: 'payload_too_large' }, 413);
   }
 
   // HMAC verification
-  const signature = request.headers.get('X-BugPulse-Signature');
-  const timestamp = request.headers.get('X-BugPulse-Timestamp');
-  const body = await request.text();
+  const signature = c.req.header('X-BugPulse-Signature');
+  const timestamp = c.req.header('X-BugPulse-Timestamp');
+  const body = await c.req.text();
 
   if (body.length > MAX_BODY_BYTES) {
-    return json({ error: 'payload_too_large' }, 413);
+    return c.json({ error: 'payload_too_large' }, 413);
   }
 
   if (!signature || !timestamp) {
-    return json({ error: 'invalid_signature' }, 403);
+    return c.json({ error: 'invalid_signature' }, 403);
   }
 
   const valid = await verifyHmac(body, signature, timestamp, user.hmac_secret);
   if (!valid) {
-    return json({ error: 'invalid_signature' }, 403);
+    return c.json({ error: 'invalid_signature' }, 403);
   }
 
   let report: IncomingReport;
   try {
     report = JSON.parse(body) as IncomingReport;
   } catch {
-    return json({ error: 'validation_error', details: ['Invalid JSON'] }, 422);
+    return c.json({ error: 'validation_error', details: ['Invalid JSON'] }, 422);
   }
 
-  // Upload screenshot to R2
+  // Screenshot: use existing screenshotId or upload inline base64
   let screenshotUrl: string | null = null;
-  if (report.screenshotBase64) {
-    screenshotUrl = await uploadScreenshot(env, report.screenshotBase64, user.id);
-    // Graceful: if upload fails, screenshotUrl stays null
+  if (report.screenshotId) {
+    screenshotUrl = getScreenshotUrl(c.env, report.screenshotId);
+  } else if (report.screenshotBase64) {
+    screenshotUrl = await uploadScreenshot(c.env, report.screenshotBase64, user.id);
   }
 
   // Auto-labels
@@ -122,17 +116,19 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     ? deriveLabels(report)
     : [];
 
+  // Auto-generated issue title
+  const title = generateTitle(report);
+
   // Duplicate detection (pro/beta only)
   const errorMsg = report.diagnostics?.lastError?.message ?? null;
   if (checkTierAccess(user.plan, 'dedup')) {
     const { isDuplicate, existingIssueUrl } = await checkDuplicate(
-      env, user.id, report.screen, errorMsg, report.description,
+      c.env, user.id, report.screen, errorMsg, report.description,
     );
 
     if (isDuplicate && existingIssueUrl) {
-      // Add comment to existing issue instead of creating new one
-      await addCommentToExistingIssue(env, user, existingIssueUrl, report);
-      return json({
+      await addCommentToExistingIssue(c.env, user, existingIssueUrl, report);
+      return c.json({
         success: true,
         duplicate: true,
         issues: [{ destination: 'existing', url: existingIssueUrl, key: 'duplicate' }],
@@ -140,82 +136,178 @@ async function handleReport(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  // Get user's integrations and routing rules
-  const integrations = await env.DB.prepare(
+  // Get user's integrations (all fire, routing rules removed)
+  const integrations = await c.env.DB.prepare(
     'SELECT * FROM integrations WHERE user_id = ? AND enabled = 1',
   ).bind(user.id).all<IntegrationRow>();
 
-  const rules = await env.DB.prepare(
-    'SELECT * FROM routing_rules WHERE user_id = ?',
-  ).bind(user.id).all<{ integration_id: string; conditions: string | null }>();
-
-  // Determine which integrations to fire
-  const matchedIntegrations = filterByRoutingRules(
-    integrations.results ?? [],
-    rules.results ?? [],
-    report,
-  );
+  const matchedIntegrations = integrations.results ?? [];
 
   if (matchedIntegrations.length === 0) {
-    return json({ success: true, issues: [] });
+    return c.json({ success: true, issues: [] });
   }
 
   // Check multi-routing tier limit
   const maxDestinations = user.plan === 'starter' ? 2 : Infinity;
   const activeIntegrations = matchedIntegrations.slice(0, maxDestinations);
 
-  // Sync: create issue on primary integration
-  const primary = activeIntegrations[0]!;
-  let primaryResult: IssueResult | null = null;
+  // Parallel fan-out to all integrations
+  const results = await Promise.allSettled(
+    activeIntegrations.map(async (integration) => {
+      const config = JSON.parse(await decrypt(integration.config, c.env.ENCRYPTION_KEY)) as Record<string, string>;
+      return createIssue(integration.type, report, config, labels, screenshotUrl, title);
+    }),
+  );
 
-  try {
-    const config = JSON.parse(await decrypt(primary.config, env.ENCRYPTION_KEY)) as Record<string, string>;
-    primaryResult = await createIssue(primary.type, report, config, labels, screenshotUrl);
-
-    // Update dedup hash with issue URL
-    if (primaryResult && checkTierAccess(user.plan, 'dedup')) {
-      await updateHashWithIssueUrl(env, user.id, report.screen, errorMsg, primaryResult.url, report.description);
+  const issues: IssueResult[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      issues.push(result.value);
     }
-  } catch (error) {
-    console.error('[BugPulse Proxy] Primary integration failed:', error);
-    return json({ error: 'internal_error' }, 500);
   }
 
-  // Async: enqueue secondary integrations (store ID only, decrypt in consumer)
-  for (let i = 1; i < activeIntegrations.length; i++) {
-    const integration = activeIntegrations[i]!;
-
-    await env.FANOUT_QUEUE.send({
-      report,
-      integration: { id: integration.id, type: integration.type },
-      labels,
-      screenshotUrl,
-      userId: user.id,
-    } satisfies QueueMessage);
+  // Update dedup hash with first successful issue URL
+  if (issues.length > 0 && checkTierAccess(user.plan, 'dedup')) {
+    await updateHashWithIssueUrl(c.env, user.id, report.screen, errorMsg, issues[0]!.url, report.description);
   }
 
-  const issues: IssueResult[] = primaryResult ? [primaryResult] : [];
-  return json({ success: true, issues });
-}
+  // Fire-and-forget: spike detection + onboarding (non-blocking)
+  const errorMsg2 = report.diagnostics?.lastError?.message ?? null;
+  c.executionCtx.waitUntil(trackSpike(c.env, user.id, report.screen, errorMsg2));
+  c.executionCtx.waitUntil(checkAndSendOnboarding(c.env, user.id, report));
 
-// --- Queue processing ---
+  return c.json({ success: true, issues });
+});
 
-async function processQueueMessage(msg: QueueMessage, env: Env): Promise<void> {
-  // Re-fetch and decrypt credentials from D1 (never stored in queue)
-  const row = await env.DB.prepare(
-    'SELECT config FROM integrations WHERE id = ?',
-  ).bind(msg.integration.id).first<{ config: string }>();
+// --- Screenshot upload (separate endpoint) ---
+app.post('/v1/screenshots', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ base64: string }>();
+
+  if (!body.base64) {
+    return c.json({ error: 'validation_error', details: ['base64 required'] }, 422);
+  }
+
+  if (body.base64.length > MAX_BODY_BYTES) {
+    return c.json({ error: 'payload_too_large' }, 413);
+  }
+
+  const id = crypto.randomUUID();
+  const url = await uploadScreenshot(c.env, body.base64, user.id, id);
+  if (!url) {
+    return c.json({ error: 'upload_failed' }, 500);
+  }
+
+  return c.json({ id, url });
+});
+
+// --- Screenshot proxy redirect (auth'd) ---
+app.get('/v1/screenshots/:id', requireAuth, async (c) => {
+  const screenshotId = c.req.param('id');
+  const url = getScreenshotUrl(c.env, screenshotId);
+  if (!url) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  return c.redirect(url, 302);
+});
+
+// --- Integration CRUD ---
+app.post('/v1/integrations', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ type?: string; config?: Record<string, string> }>();
+
+  if (!body.type || !body.config) {
+    return c.json({ error: 'validation_error', details: ['type and config required'] }, 422);
+  }
+
+  if (!VALID_INTEGRATION_TYPES.has(body.type)) {
+    return c.json({ error: 'validation_error', details: [`Invalid type. Must be one of: ${[...VALID_INTEGRATION_TYPES].join(', ')}`] }, 422);
+  }
+
+  // Validate token before saving
+  const healthResult = await checkIntegrationHealth(body.type, body.config);
+  if (!healthResult.healthy) {
+    return c.json({ error: 'invalid_token', details: [healthResult.error ?? 'Token validation failed'] }, 422);
+  }
+
+  const id = crypto.randomUUID();
+  const encryptedConfig = await encrypt(JSON.stringify(body.config), c.env.ENCRYPTION_KEY);
+
+  await c.env.DB.prepare(
+    'INSERT INTO integrations (id, user_id, type, config) VALUES (?, ?, ?, ?)',
+  ).bind(id, user.id, body.type, encryptedConfig).run();
+
+  return c.json({ id, type: body.type, enabled: true });
+});
+
+app.get('/v1/integrations', requireAuth, async (c) => {
+  const user = c.get('user');
+  const results = await c.env.DB.prepare(
+    'SELECT id, type, enabled, created_at FROM integrations WHERE user_id = ?',
+  ).bind(user.id).all();
+
+  return c.json({ integrations: results.results ?? [] });
+});
+
+app.delete('/v1/integrations/:id', requireAuth, async (c) => {
+  const user = c.get('user');
+  const integrationId = c.req.param('id');
+
+  await c.env.DB.prepare(
+    'DELETE FROM integrations WHERE id = ? AND user_id = ?',
+  ).bind(integrationId, user.id).run();
+
+  return c.json({ deleted: true });
+});
+
+// --- Integration health check ---
+app.get('/v1/integrations/:id/health', requireAuth, async (c) => {
+  const user = c.get('user');
+  const integrationId = c.req.param('id');
+
+  const row = await c.env.DB.prepare(
+    'SELECT type, config FROM integrations WHERE id = ? AND user_id = ?',
+  ).bind(integrationId, user.id).first<{ type: string; config: string }>();
 
   if (!row) {
-    console.error(`[BugPulse Proxy] Integration ${msg.integration.id} not found`);
-    return;
+    return c.json({ error: 'not_found' }, 404);
   }
 
-  const config = JSON.parse(await decrypt(row.config, env.ENCRYPTION_KEY)) as Record<string, string>;
-  await createIssue(msg.integration.type, msg.report, config, msg.labels, msg.screenshotUrl);
-}
+  const config = JSON.parse(await decrypt(row.config, c.env.ENCRYPTION_KEY)) as Record<string, string>;
+  const result = await checkIntegrationHealth(row.type, config);
+
+  return c.json({ healthy: result.healthy, error: result.error ?? null, checkedAt: new Date().toISOString() });
+});
+
+// --- Stripe webhook (no auth middleware — uses Stripe signature) ---
+app.post('/v1/stripe/webhook', async (c) => {
+  return handleStripeWebhook(c.req.raw, c.env);
+});
+
+// --- API key rotation ---
+app.post('/v1/rotate-key', requireAuth, async (c) => {
+  const user = c.get('user');
+  const newKey = `bp_${crypto.randomUUID().replace(/-/g, '')}`;
+
+  await c.env.DB.prepare(
+    'UPDATE users SET api_key = ? WHERE id = ?',
+  ).bind(newKey, user.id).run();
+
+  return c.json({ api_key: newKey });
+});
+
+// --- 404 fallback ---
+app.all('*', (c) => c.json({ error: 'not_found' }, 404));
 
 // --- Integration dispatch ---
+
+function generateTitle(report: IncomingReport): string {
+  const severity = report.diagnostics?.lastError ? 'crash' : 'feedback';
+  const errorMsg = report.diagnostics?.lastError?.message;
+  const desc = errorMsg ?? report.description.split('\n')[0] ?? '';
+  const raw = `[${severity}] ${report.screen}: ${desc}`;
+  return raw.length > 120 ? raw.slice(0, 117) + '...' : raw;
+}
 
 async function createIssue(
   type: IntegrationRow['type'],
@@ -223,14 +315,15 @@ async function createIssue(
   config: Record<string, string>,
   labels: string[],
   screenshotUrl: string | null,
+  title: string,
 ): Promise<IssueResult> {
   switch (type) {
     case 'linear':
-      return createLinearIssue(report, config as any, labels, screenshotUrl);
+      return createLinearIssue(report, config as any, labels, screenshotUrl, title);
     case 'github':
-      return createGithubIssue(report, config as any, labels, screenshotUrl);
+      return createGithubIssue(report, config as any, labels, screenshotUrl, title);
     case 'jira':
-      return createJiraIssue(report, config as any, labels, screenshotUrl);
+      return createJiraIssue(report, config as any, labels, screenshotUrl, title);
     default:
       throw new Error(`Unknown integration type: ${type}`);
   }
@@ -242,7 +335,6 @@ async function addCommentToExistingIssue(
   issueUrl: string,
   report: IncomingReport,
 ): Promise<void> {
-  // Determine integration type from URL
   const integrations = await env.DB.prepare(
     'SELECT * FROM integrations WHERE user_id = ? AND enabled = 1',
   ).bind(user.id).all<IntegrationRow>();
@@ -269,172 +361,95 @@ async function addCommentToExistingIssue(
   }
 }
 
-// --- Routing ---
+async function checkIntegrationHealth(
+  type: string,
+  config: Record<string, string>,
+): Promise<{ healthy: boolean; error?: string }> {
+  const timeout = 5000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
 
-function filterByRoutingRules(
-  integrations: IntegrationRow[],
-  rules: Array<{ integration_id: string; conditions: string | null }>,
-  report: IncomingReport,
-): IntegrationRow[] {
-  if (rules.length === 0) {
-    // No rules = all integrations fire
-    return integrations;
-  }
+  try {
+    let response: Response;
 
-  const matchedIds = new Set<string>();
-  for (const rule of rules) {
-    if (!rule.conditions) {
-      // null conditions = always fire
-      matchedIds.add(rule.integration_id);
-      continue;
+    switch (type) {
+      case 'linear':
+        response = await fetch('https://api.linear.app/graphql', {
+          method: 'POST',
+          headers: {
+            'Authorization': config.token!,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query: '{ viewer { id } }' }),
+          signal: controller.signal,
+        });
+        break;
+      case 'github':
+        response = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${config.token}`,
+            'User-Agent': 'BugPulse-Proxy',
+          },
+          signal: controller.signal,
+        });
+        break;
+      case 'jira':
+        response = await fetch(`https://${config.domain}/rest/api/3/myself`, {
+          headers: {
+            'Authorization': `Basic ${btoa(`${config.email}:${config.api_token}`)}`,
+          },
+          signal: controller.signal,
+        });
+        break;
+      default:
+        return { healthy: false, error: `Unknown type: ${type}` };
     }
 
-    let conditions: RoutingConditions;
-    try {
-      conditions = JSON.parse(rule.conditions) as RoutingConditions;
-    } catch {
-      continue; // Skip malformed rules
+    if (!response.ok) {
+      return { healthy: false, error: `API returned ${response.status}` };
     }
-    if (matchesConditions(conditions, report)) {
-      matchedIds.add(rule.integration_id);
+    return { healthy: true };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { healthy: false, error: msg.includes('abort') ? 'timeout' : msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// --- Exports ---
+
+export default {
+  fetch: app.fetch,
+
+  async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
+    for (const msg of batch.messages) {
+      try {
+        const row = await env.DB.prepare(
+          'SELECT config FROM integrations WHERE id = ?',
+        ).bind(msg.integration.id).first<{ config: string }>();
+
+        if (!row) {
+          console.error(`[BugPulse Proxy] Integration ${msg.integration.id} not found`);
+          msg.ack();
+          continue;
+        }
+
+        const config = JSON.parse(await decrypt(row.config, env.ENCRYPTION_KEY)) as Record<string, string>;
+        const title = generateTitle(msg.report);
+        await createIssue(msg.integration.type, msg.report, config, msg.labels, msg.screenshotUrl, title);
+        msg.ack();
+      } catch (error) {
+        console.error('[BugPulse Proxy] Queue consumer error:', error);
+        msg.retry();
+      }
     }
-  }
+  },
 
-  return integrations.filter((i) => matchedIds.has(i.id));
-}
-
-function matchesConditions(conditions: RoutingConditions, report: IncomingReport): boolean {
-  if (conditions.screen_match && !report.screen.startsWith(conditions.screen_match)) {
-    return false;
-  }
-
-  if (conditions.platform) {
-    const os = report.device.os.toLowerCase();
-    if (conditions.platform === 'ios' && !os.includes('ios')) return false;
-    if (conditions.platform === 'android' && !os.includes('android')) return false;
-  }
-
-  // error_type matching would require classification — skip for now
-  return true;
-}
-
-// --- Signup ---
-
-async function handleSignup(request: Request, env: Env): Promise<Response> {
-  const body = (await request.json()) as { email?: string };
-  if (!body.email) {
-    return json({ error: 'validation_error', details: ['email required'] }, 422);
-  }
-
-  const id = crypto.randomUUID();
-  const apiKey = `bp_${crypto.randomUUID().replace(/-/g, '')}`;
-  const hmacSecret = `bps_${crypto.randomUUID().replace(/-/g, '')}`;
-
-  // INSERT OR IGNORE to handle race conditions on duplicate email
-  const result = await env.DB.prepare(
-    'INSERT OR IGNORE INTO users (id, email, api_key, hmac_secret, plan) VALUES (?, ?, ?, ?, ?)',
-  ).bind(id, body.email, apiKey, hmacSecret, 'free').run();
-
-  if (result.meta.changes === 0) {
-    return json({ error: 'email_exists' }, 409);
-  }
-
-  return json({ api_key: apiKey, hmac_secret: hmacSecret });
-}
-
-// --- Integration CRUD ---
-
-async function handleCreateIntegration(request: Request, env: Env): Promise<Response> {
-  const user = await authenticateRequest(request, env);
-  if (!user) return json({ error: 'invalid_api_key' }, 403);
-
-  const body = (await request.json()) as { type?: string; config?: Record<string, string> };
-  if (!body.type || !body.config) {
-    return json({ error: 'validation_error', details: ['type and config required'] }, 422);
-  }
-
-  if (!VALID_INTEGRATION_TYPES.has(body.type)) {
-    return json({ error: 'validation_error', details: [`Invalid type. Must be one of: ${[...VALID_INTEGRATION_TYPES].join(', ')}`] }, 422);
-  }
-
-  const id = crypto.randomUUID();
-  const encryptedConfig = await encrypt(JSON.stringify(body.config), env.ENCRYPTION_KEY);
-
-  await env.DB.prepare(
-    'INSERT INTO integrations (id, user_id, type, config) VALUES (?, ?, ?, ?)',
-  ).bind(id, user.id, body.type, encryptedConfig).run();
-
-  return json({ id, type: body.type, enabled: true });
-}
-
-async function handleListIntegrations(request: Request, env: Env): Promise<Response> {
-  const user = await authenticateRequest(request, env);
-  if (!user) return json({ error: 'invalid_api_key' }, 403);
-
-  const results = await env.DB.prepare(
-    'SELECT id, type, enabled, created_at FROM integrations WHERE user_id = ?',
-  ).bind(user.id).all();
-
-  return json({ integrations: results.results ?? [] });
-}
-
-async function handleDeleteIntegration(request: Request, env: Env, integrationId: string): Promise<Response> {
-  const user = await authenticateRequest(request, env);
-  if (!user) return json({ error: 'invalid_api_key' }, 403);
-
-  await env.DB.prepare(
-    'DELETE FROM integrations WHERE id = ? AND user_id = ?',
-  ).bind(integrationId, user.id).run();
-
-  // Also delete associated routing rules
-  await env.DB.prepare(
-    'DELETE FROM routing_rules WHERE integration_id = ? AND user_id = ?',
-  ).bind(integrationId, user.id).run();
-
-  return json({ deleted: true });
-}
-
-async function handleCreateRoutingRule(request: Request, env: Env): Promise<Response> {
-  const user = await authenticateRequest(request, env);
-  if (!user) return json({ error: 'invalid_api_key' }, 403);
-
-  const body = (await request.json()) as { integration_id?: string; conditions?: RoutingConditions | null };
-  if (!body.integration_id) {
-    return json({ error: 'validation_error', details: ['integration_id required'] }, 422);
-  }
-
-  // Verify integration belongs to this user
-  const integration = await env.DB.prepare(
-    'SELECT id FROM integrations WHERE id = ? AND user_id = ?',
-  ).bind(body.integration_id, user.id).first();
-  if (!integration) {
-    return json({ error: 'validation_error', details: ['integration not found'] }, 422);
-  }
-
-  const id = crypto.randomUUID();
-  const conditions = body.conditions ? JSON.stringify(body.conditions) : null;
-
-  await env.DB.prepare(
-    'INSERT INTO routing_rules (id, user_id, integration_id, conditions) VALUES (?, ?, ?, ?)',
-  ).bind(id, user.id, body.integration_id, conditions).run();
-
-  return json({ id });
-}
-
-// --- Helpers ---
-
-async function authenticateRequest(request: Request, env: Env) {
-  const apiKey = request.headers.get('X-BugPulse-Key');
-  if (!apiKey) return null;
-  return lookupUser(apiKey, env);
-}
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    const hashCleaned = await cleanupExpiredHashes(env);
+    const spikeCleaned = await cleanupSpikeWindows(env);
+    const graceExpired = await expireGracePeriods(env);
+    console.log(`[BugPulse Proxy] Cleaned ${hashCleaned} hashes, ${spikeCleaned} spike windows, ${graceExpired} grace periods expired`);
+  },
+};

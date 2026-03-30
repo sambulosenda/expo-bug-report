@@ -11,10 +11,11 @@ export async function createLinearIssue(
   config: LinearConfig,
   labels: string[],
   screenshotUrl: string | null,
+  title?: string,
 ): Promise<IssueResult> {
-  const title = report.description
+  const issueTitle = title ?? (report.description
     ? report.description.slice(0, 200)
-    : `Bug report from ${report.screen}`;
+    : `Bug report from ${report.screen}`);
 
   const body = formatIssueBody(report, screenshotUrl);
 
@@ -46,7 +47,7 @@ export async function createLinearIssue(
         input: {
           teamId: config.team_id,
           projectId: config.project_id || undefined,
-          title,
+          title: issueTitle,
           description: body,
           labelIds: labelIds.length > 0 ? labelIds : undefined,
         },

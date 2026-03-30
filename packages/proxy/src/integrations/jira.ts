@@ -12,10 +12,11 @@ export async function createJiraIssue(
   config: JiraConfig,
   labels: string[],
   screenshotUrl: string | null,
+  title?: string,
 ): Promise<IssueResult> {
-  const summary = report.description
+  const summary = title ?? (report.description
     ? report.description.slice(0, 250)
-    : `Bug report from ${report.screen}`;
+    : `Bug report from ${report.screen}`);
 
   const description = formatJiraDescription(report, screenshotUrl);
 

@@ -1,12 +1,54 @@
 import type { Env, User } from './types';
 
 const TIMESTAMP_DRIFT_SECONDS = 300; // ±5 minutes
+const MAX_FAILURES = 10;
+const LOCKOUT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+// In-memory brute force tracking (per isolate, lost on eviction — good enough for Phase 2)
+const failedAttempts = new Map<string, { count: number; firstFailure: number }>();
+
+export function recordFailedAuth(apiKey: string): void {
+  const now = Date.now();
+  const entry = failedAttempts.get(apiKey);
+
+  if (!entry || now - entry.firstFailure > LOCKOUT_WINDOW_MS) {
+    failedAttempts.set(apiKey, { count: 1, firstFailure: now });
+    return;
+  }
+
+  entry.count++;
+}
+
+export function isLockedOut(apiKey: string): boolean {
+  const entry = failedAttempts.get(apiKey);
+  if (!entry) return false;
+
+  if (Date.now() - entry.firstFailure > LOCKOUT_WINDOW_MS) {
+    failedAttempts.delete(apiKey);
+    return false;
+  }
+
+  return entry.count >= MAX_FAILURES;
+}
+
+function clearFailedAttempts(apiKey: string): void {
+  failedAttempts.delete(apiKey);
+}
 
 export async function lookupUser(apiKey: string, env: Env): Promise<User | null> {
+  if (isLockedOut(apiKey)) return null;
+
   const result = await env.DB.prepare(
     'SELECT * FROM users WHERE api_key = ?',
   ).bind(apiKey).first<User>();
-  return result ?? null;
+
+  if (!result) {
+    recordFailedAuth(apiKey);
+    return null;
+  }
+
+  clearFailedAttempts(apiKey);
+  return result;
 }
 
 export async function verifyHmac(

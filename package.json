@@ -90,5 +90,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/sambulosenda/expo-bug-report"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

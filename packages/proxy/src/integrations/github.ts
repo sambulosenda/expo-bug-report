@@ -11,10 +11,11 @@ export async function createGithubIssue(
   config: GithubConfig,
   labels: string[],
   screenshotUrl: string | null,
+  title?: string,
 ): Promise<IssueResult> {
-  const title = report.description
+  const issueTitle = title ?? (report.description
     ? report.description.slice(0, 200)
-    : `Bug report from ${report.screen}`;
+    : `Bug report from ${report.screen}`);
 
   const body = formatIssueBody(report, screenshotUrl);
 
@@ -32,7 +33,7 @@ export async function createGithubIssue(
         Accept: 'application/vnd.github+json',
       },
       body: JSON.stringify({
-        title,
+        title: issueTitle,
         body,
         labels: labels.length > 0 ? labels : undefined,
       }),

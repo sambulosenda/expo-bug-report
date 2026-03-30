@@ -14,6 +14,8 @@ export interface User {
   hmac_secret: string;
   stripe_customer_id: string | null;
   plan: 'free' | 'starter' | 'pro' | 'beta';
+  first_report_sent: number;
+  grace_expires_at: string | null;
   created_at: string;
 }
 
@@ -24,20 +26,6 @@ export interface IntegrationRow {
   config: string; // encrypted JSON
   enabled: number;
   created_at: string;
-}
-
-export interface RoutingRule {
-  id: string;
-  user_id: string;
-  integration_id: string;
-  conditions: string | null; // JSON or null (always fire)
-  created_at: string;
-}
-
-export interface RoutingConditions {
-  screen_match?: string | null;
-  error_type?: 'crash' | 'visual' | 'functional' | null;
-  platform?: 'ios' | 'android' | null;
 }
 
 export interface QueueMessage {
@@ -55,6 +43,7 @@ export interface IncomingReport {
   screenshot: string | null;
   annotatedScreenshot: string | null;
   screenshotBase64: string | null;
+  screenshotId: string | null;
   description: string;
   device: {
     model: string;

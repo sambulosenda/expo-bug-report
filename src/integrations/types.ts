@@ -59,6 +59,7 @@ export interface SendResult {
   success: boolean;
   error?: string;
   issues?: IssueLinkInfo[];
+  reportHash?: string;
 }
 
 export interface Integration {

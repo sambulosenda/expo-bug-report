@@ -149,21 +149,39 @@ export function ProxyIntegration(config: ProxyConfig): Integration {
     name: 'proxy',
     async send(report: BugReport): Promise<SendResult> {
       try {
-        // Encode screenshot as base64 for proxy
-        let screenshotBase64: string | null = null;
+        // Step 1: Upload screenshot separately (avoids timeout on large payloads)
+        let screenshotId: string | null = null;
         const imageUri = report.annotatedScreenshot ?? report.screenshot;
         if (imageUri) {
           try {
-            screenshotBase64 = await fileToBase64(imageUri);
+            const base64 = await fileToBase64(imageUri);
+            const uploadResponse = await fetchWithTimeout(
+              `${config.proxyUrl}/v1/screenshots`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-BugPulse-Key': config.apiKey,
+                },
+                body: JSON.stringify({ base64 }),
+              },
+              timeoutMs * 3, // 15s for upload (larger payload)
+            );
+            if (uploadResponse.ok) {
+              const uploadData = await uploadResponse.json().catch(() => ({}));
+              screenshotId = (uploadData as Record<string, unknown>).id as string ?? null;
+            }
           } catch (error) {
             const reason = error instanceof Error ? error.message : 'unknown error';
-            console.warn(`[BugPulse] Failed to encode screenshot: ${reason}. Sending without screenshot.`);
+            console.warn(`[BugPulse] Screenshot upload failed: ${reason}. Sending report without screenshot.`);
           }
         }
 
+        // Step 2: Send report (small JSON, no base64)
         const payload = JSON.stringify({
           ...report,
-          screenshotBase64,
+          screenshotBase64: null,
+          screenshotId,
           diagnostics: report.diagnostics ?? null,
         });
 
