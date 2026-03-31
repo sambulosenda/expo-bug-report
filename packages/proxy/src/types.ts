@@ -8,6 +8,7 @@ export interface Env {
   STRIPE_STARTER_PRICE_ID: string;
   STRIPE_PRO_PRICE_ID: string;
   RESEND_API_KEY: string;
+  APP_URL: string; // e.g. "https://bugpulse.dev" or "https://bugpulse.pages.dev"
   ALLOWED_ORIGINS: string; // comma-separated, e.g. "https://bugpulse.dev,http://localhost:3000"
 }
 

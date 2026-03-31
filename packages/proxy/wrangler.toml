@@ -24,6 +24,9 @@ queue = "bugpulse-fanout"
 max_batch_size = 10
 max_retries = 3
 
+[vars]
+APP_URL = "https://bugpulse-dashboard.pages.dev"
+
 # Secrets (set via `wrangler secret put`):
 # ENCRYPTION_KEY - AES-256-GCM key for credential encryption
 # STRIPE_SECRET_KEY - Stripe API key

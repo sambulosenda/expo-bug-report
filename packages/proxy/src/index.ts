@@ -423,7 +423,7 @@ app.post('/v1/billing/portal', requireAuth, async (c) => {
   try {
     const session = await stripe.billingPortal.sessions.create({
       customer: user.stripe_customer_id,
-      return_url: 'https://bugpulse.dev',
+      return_url: c.env.APP_URL,
     });
     return c.json({ url: session.url });
   } catch {
@@ -463,8 +463,8 @@ app.post('/v1/checkout', requireAuth, async (c) => {
       customer_email: user.stripe_customer_id ? undefined : user.email,
       customer: user.stripe_customer_id ?? undefined,
       metadata: { plan: body.plan, bugpulse_user_id: user.id },
-      success_url: 'https://bugpulse.dev/?checkout=success',
-      cancel_url: 'https://bugpulse.dev/?checkout=cancel',
+      success_url: `${c.env.APP_URL}/?checkout=success`,
+      cancel_url: `${c.env.APP_URL}/?checkout=cancel`,
     });
 
     return c.json({ url: session.url });
@@ -812,7 +812,7 @@ app.post('/v1/team/invite', requireDashboardAuth, async (c) => {
     'INSERT INTO magic_tokens (token, team_member_id, user_id, expires_at) VALUES (?, ?, ?, ?)',
   ).bind(magicToken, memberId, user.id, expiresAt).run();
 
-  const inviteUrl = `https://bugpulse.dev/auth/magic?token=${magicToken}`;
+  const inviteUrl = `${c.env.APP_URL}/auth/magic?token=${magicToken}`;
 
   // Try to send email via Resend (fail-open: return manual link if Resend is down)
   try {
