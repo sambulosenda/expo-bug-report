@@ -7,6 +7,34 @@ title: Integrations
 
 BugPulse sends reports to one or more integrations. Pass them to `BugReportProvider`.
 
+## BugPulse Proxy (recommended)
+
+Send reports to the BugPulse backend for storage and viewing in the web dashboard.
+
+```tsx
+import { ProxyIntegration } from '@bugpulse/react-native';
+
+ProxyIntegration({
+  proxyUrl: 'https://your-proxy.your-workers.dev',
+  apiKey: 'bp_...',
+  timeout: 10000,        // optional, default 10s
+  fallbackWebhookUrl: 'https://fallback.com/bugs', // optional
+})
+```
+
+### How it works
+
+1. Report payload is HMAC-SHA256 signed with your API key
+2. Screenshots are uploaded separately via `POST /v1/screenshots` (handles large payloads)
+3. Report metadata + screenshot ID sent to `POST /v1/reports`
+4. If the proxy returns 402 (plan limits exceeded), falls back to `fallbackWebhookUrl` if configured
+
+### Setup
+
+1. Run `npx @bugpulse/cli signup` to create an account
+2. You'll get a proxy URL and API key
+3. Run `npx @bugpulse/cli open` to open the dashboard
+
 ## Slack
 
 Send bug reports to a Slack channel via webhook.

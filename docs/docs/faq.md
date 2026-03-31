@@ -54,9 +54,9 @@ Minimal impact:
 
 ## Is my state data safe?
 
-State snapshots are sent as-is to your configured integrations (Slack webhook, custom webhook). BugPulse does not send data to any BugPulse servers. There is no backend.
+State snapshots are sent to your configured integrations. If using ProxyIntegration, reports are stored in BugPulse's Cloudflare D1 database and viewable in the dashboard.
 
-**Important:** Do not track stores containing passwords, auth tokens, or PII. A redaction API is planned for a future release.
+**Redaction:** Use `redactStateKeys(['user.password', 'auth.token'])` to exclude sensitive fields. Supports dot-notation for nested paths. Redacted values appear as `"[REDACTED]"` in snapshots.
 
 ## Are my webhook URLs safe?
 
@@ -65,7 +65,7 @@ Slack webhook URLs and imgbb API keys configured in the SDK live in the app's Ja
 Mitigations:
 - Slack webhooks are write-only (can't read channel history)
 - Rotate webhook URLs if compromised
-- For production apps, consider routing through a serverless proxy (Cloudflare Worker free tier)
+- For production apps, use `ProxyIntegration` which holds credentials server-side on Cloudflare Workers
 
 ## Can I trigger reports programmatically?
 

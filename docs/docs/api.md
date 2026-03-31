@@ -127,6 +127,90 @@ const colors = useThemeColors('dark'); // or 'light', or undefined for auto
 
 Returns a `ThemeColors` object with `background`, `surface`, `border`, `text`, `textSecondary`, `primary`, `error`, etc.
 
+## startConsoleCapture / stopConsoleCapture / getConsoleLogs
+
+Capture `console.warn` and `console.error` calls. Captured logs are automatically included in bug report diagnostics.
+
+```tsx
+import { startConsoleCapture, stopConsoleCapture, getConsoleLogs } from '@bugpulse/react-native';
+
+startConsoleCapture();   // Start intercepting console.warn/error
+const logs = getConsoleLogs(); // Returns ConsoleLogEntry[] (last 20)
+stopConsoleCapture();    // Stop intercepting, restore originals
+```
+
+### ConsoleLogEntry
+
+```typescript
+interface ConsoleLogEntry {
+  level: 'warn' | 'error';
+  message: string;
+  timestamp: string;
+}
+```
+
+## redactStateKeys / clearRedactedKeys
+
+Redact sensitive fields from state snapshots before they're captured.
+
+```tsx
+import { redactStateKeys, clearRedactedKeys } from '@bugpulse/react-native';
+
+// Redact nested paths with dot notation
+redactStateKeys(['user.password', 'user.token', 'auth.refreshToken']);
+
+// Clear all redaction rules
+clearRedactedKeys();
+```
+
+Redacted fields appear as `"[REDACTED]"` in state snapshots.
+
+## detectSeverity
+
+Auto-classify a bug report's severity.
+
+```tsx
+import { detectSeverity } from '@bugpulse/react-native';
+
+const severity = detectSeverity(report);
+// 'crash' — ErrorBoundary caught an error
+// 'error' — description matches error keywords
+// 'feedback' — default
+```
+
+### ReportSeverity
+
+```typescript
+type ReportSeverity = 'crash' | 'error' | 'feedback';
+```
+
+## generateReproSteps
+
+Generate a human-readable timeline of events leading up to the bug.
+
+```tsx
+import { generateReproSteps } from '@bugpulse/react-native';
+
+const steps = generateReproSteps(diagnostics);
+// Returns: "1. [10:32:01] Navigated to /cart\n2. [10:32:05] State changed: cart..."
+```
+
+## getExpoPushToken / getCachedPushToken
+
+Get the Expo Push Token (requires `expo-notifications` as a peer dependency).
+
+```tsx
+import { getExpoPushToken, getCachedPushToken } from '@bugpulse/react-native';
+
+// Async — requests permission and fetches token
+const token = await getExpoPushToken();
+
+// Sync — returns cached value (null if not yet fetched)
+const cached = getCachedPushToken();
+```
+
+The push token is automatically included in bug reports when using `ProxyIntegration`.
+
 ## Types
 
 ### BugReport
@@ -164,3 +248,19 @@ interface Integration {
 ```
 
 Build custom integrations by implementing this interface. See [Integrations](/integrations) for details.
+
+### ConsoleLogEntry
+
+```typescript
+interface ConsoleLogEntry {
+  level: 'warn' | 'error';
+  message: string;
+  timestamp: string;
+}
+```
+
+### ReportSeverity
+
+```typescript
+type ReportSeverity = 'crash' | 'error' | 'feedback';
+```

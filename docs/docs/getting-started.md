@@ -121,6 +121,24 @@ The example app has a cart with Zustand, multiple screens with Expo Router, and 
 5. User adds a description (sees a diagnostics summary)
 6. SDK collects device info, attaches everything, sends to integrations
 
+## Dashboard Setup
+
+View and manage reports in a web dashboard:
+
+```bash
+# Create an account and get your API key
+npx @bugpulse/cli signup
+
+# Use ProxyIntegration instead of (or alongside) Slack
+import { ProxyIntegration } from '@bugpulse/react-native';
+
+<BugReportProvider integrations={[ProxyIntegration({ proxyUrl: '...', apiKey: 'bp_...' })]}>
+```
+
+Open the dashboard: `npx @bugpulse/cli open`
+
+Invite team members: `npx @bugpulse/cli invite teammate@company.com`
+
 ## Requirements
 
 - Expo SDK 50+

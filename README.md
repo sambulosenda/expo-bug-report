@@ -1,6 +1,6 @@
-# @bugpulse/react-native
+# BugPulse
 
-Lightweight in-app bug reporting for React Native & Expo. Shake to report. Annotate screenshots. Auto-capture app state, navigation history, and JS errors. Send to Slack or any webhook.
+Lightweight in-app bug reporting for React Native & Expo. Shake to report. Annotate screenshots. Auto-capture app state, navigation history, console logs, and JS errors. View and manage reports in a web dashboard.
 
 ## What makes this different
 
@@ -8,7 +8,21 @@ Every bug report automatically includes what cross-platform tools don't capture:
 - **Zustand/Redux state snapshots** at the moment of the shake (not when the user hits submit)
 - **Expo Router navigation history** (last 10 routes)
 - **JS error boundary data** (last caught error + component stack)
+- **Console log capture** (warnings and errors, ring buffer of last 20)
+- **Expo Push Token** (auto-captured from expo-notifications)
+- **Severity detection** (crash/error/feedback, auto-classified)
 - Device info, screenshot with annotation, and user description
+
+## Platform
+
+BugPulse is a monorepo with four packages:
+
+| Package | What it does |
+|---------|-------------|
+| `@bugpulse/react-native` | SDK. Shake-to-report, annotation, diagnostics capture |
+| `packages/dashboard` | Astro web dashboard on Cloudflare Pages. View reports, manage team, analytics |
+| `packages/proxy` | Cloudflare Workers backend. Report storage (D1), auth, Stripe billing, team invites |
+| `packages/cli` | CLI tool. `signup`, `open` (dashboard), `invite` (team members) |
 
 ## Install
 
@@ -60,7 +74,7 @@ State is captured at shake time (frozen before the user annotates), so the repor
 
 Call `untrackStore('app')` to stop tracking a store and free the subscription.
 
-**Privacy note:** State snapshots are sent as-is. Do not track stores containing passwords, auth tokens, or PII. A redaction API is planned for a future release.
+**Privacy:** Use `redactStateKeys(['user.password', 'user.token'])` to redact sensitive fields before they're captured. Supports dot-notation paths for nested objects. Call `clearRedactedKeys()` to reset.
 
 ### Navigation History (Expo Router)
 
@@ -102,6 +116,19 @@ export default function App() {
 Caught errors are passively stored and attached to the next bug report. The boundary renders a minimal fallback on error.
 
 ## Integrations
+
+### BugPulse Proxy (recommended)
+
+```tsx
+import { ProxyIntegration } from '@bugpulse/react-native';
+
+ProxyIntegration({
+  proxyUrl: 'https://your-proxy.your-workers.dev',
+  apiKey: 'bp_...',
+})
+```
+
+Reports are sent to the BugPulse proxy (Cloudflare Workers) which stores them in D1 and makes them viewable in the dashboard. Screenshots are uploaded separately to handle large payloads. Requests are HMAC-SHA256 signed. Falls back to webhook if the proxy returns 402 (plan limits).
 
 ### Slack
 
@@ -150,6 +177,46 @@ const MyIntegration: Integration = {
 | `screenNameProvider` | `() => string` | auto-detect | Current screen name |
 | `colorScheme` | `'light' \| 'dark'` | auto-detect | Override dark/light mode |
 | `enabled` | `boolean` | `true` | Enable/disable the SDK entirely |
+
+## Console Capture
+
+Capture `console.warn` and `console.error` calls and include them in bug reports:
+
+```tsx
+import { startConsoleCapture, stopConsoleCapture, getConsoleLogs } from '@bugpulse/react-native';
+
+// Call at app startup
+startConsoleCapture();
+
+// Logs are automatically included in bug report diagnostics
+// To read them manually:
+const logs = getConsoleLogs(); // last 20 entries
+
+// Cleanup
+stopConsoleCapture();
+```
+
+## Severity Detection
+
+Auto-classify reports by severity:
+
+```tsx
+import { detectSeverity } from '@bugpulse/react-native';
+
+const severity = detectSeverity(report);
+// Returns: 'crash' (ErrorBoundary caught), 'error' (description matches error keywords), or 'feedback'
+```
+
+## Repro Steps
+
+Generate a timeline of what happened before the bug:
+
+```tsx
+import { generateReproSteps } from '@bugpulse/react-native';
+
+const steps = generateReproSteps(diagnostics);
+// Returns numbered steps with timestamps: navigation, state changes, errors
+```
 
 ## Programmatic Trigger
 
@@ -212,7 +279,7 @@ Mitigations:
 - Rotate webhook URLs if compromised (Slack settings)
 - For production apps handling sensitive data, consider routing reports through a serverless proxy (e.g., Cloudflare Worker) that holds credentials server-side
 
-**State snapshot privacy:** State snapshots are sent as-is. Do not track stores containing passwords, auth tokens, or PII. A redaction API is planned for a future release.
+**State snapshot privacy:** Use `redactStateKeys()` to exclude sensitive fields from state snapshots before they're captured. See the State Capture section above.
 
 ## Requirements
 
