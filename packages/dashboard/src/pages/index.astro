@@ -501,7 +501,7 @@ import Layout from '../layouts/Layout.astro';
       height: 2px;
       background: var(--text);
       margin: 4px 0;
-      transition: 0.2s;
+      transition: transform 0.2s ease-out, opacity 0.2s ease-out;
     }
 
     /* ===== Buttons ===== */
@@ -1243,7 +1243,7 @@ import Layout from '../layouts/Layout.astro';
       padding: 6px 8px;
       color: var(--text-muted);
       cursor: pointer;
-      transition: 0.15s;
+      transition: color 0.15s ease-out, border-color 0.15s ease-out;
     }
     .copy-btn:hover { color: var(--text); border-color: var(--accent); }
     .copy-btn .copy-label { display: none; font-size: 12px; }
