@@ -2,31 +2,28 @@
 import DashboardLayout from '../../layouts/DashboardLayout.astro';
 ---
 
-<DashboardLayout title="Reports" pageTitle="BUGPULSE">
-  <div class="dashboard">
-    <!-- Left: Bug Feed -->
-    <section class="feed-section">
-      <div class="feed-header">
-        <h2 class="feed-title">Bug Feed</h2>
-        <div class="feed-controls">
-          <select id="severity-filter">
-            <option value="">All severities</option>
-            <option value="crash">Crash</option>
-            <option value="error">Error</option>
-            <option value="feedback">Feedback</option>
-          </select>
-          <select id="status-filter">
-            <option value="">All statuses</option>
-            <option value="new">New</option>
-            <option value="triaged">Triaged</option>
-            <option value="fixed">Fixed</option>
-          </select>
-          <button class="btn btn-sm" id="refresh-btn">Refresh</button>
-        </div>
+<DashboardLayout title="Smart Feed" pageTitle="BUGPULSE">
+  <div class="smart-feed">
+    <!-- Left: Group List -->
+    <section class="groups-panel" id="groups-panel">
+      <div class="groups-header">
+        <h2 class="groups-title">Bug Groups</h2>
+        <button class="btn btn-sm" id="refresh-btn">Refresh</button>
       </div>
       <div class="poll-status" id="poll-status">Auto-refreshing every 15s</div>
 
-      <div id="report-list"></div>
+      <!-- Skeleton loading -->
+      <div id="groups-skeleton">
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+      </div>
+
+      <div id="groups-list" role="listbox" aria-label="Bug groups" hidden></div>
+      <div id="ungrouped-notice" hidden></div>
+
       <div id="empty-state" class="empty-state" hidden>
         <h2>No reports yet</h2>
         <p>Set up BugPulse in your app to start receiving reports.</p>
@@ -36,472 +33,360 @@ npx @bugpulse/cli init</code></pre>
           Reports will appear here automatically once your app starts sending them.
         </p>
       </div>
+
+      <div id="error-state" class="error-state" hidden>
+        <p>Connection error</p>
+        <button class="btn btn-sm" id="retry-btn">Retry</button>
+      </div>
     </section>
 
-    <!-- Right: Stats Panel -->
-    <aside class="stats-panel" id="stats-panel">
-      <div class="hero-stat">
-        <div class="hero-stat-number" id="stat-total">--</div>
-        <div class="hero-stat-label">Total Reports</div>
+    <!-- Right: Detail Panel -->
+    <section class="detail-panel" id="detail-panel">
+      <div id="detail-empty" class="detail-empty">
+        <p>Select a bug group to view details</p>
       </div>
 
-      <div class="sparkline-container">
-        <svg class="sparkline-svg" viewBox="0 0 180 40" preserveAspectRatio="none">
-          <path id="sparkline-path" d="" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <div class="sparkline-meta">
-          <span class="sparkline-label">Last 7 days</span>
-          <span class="sparkline-total" id="sparkline-total"></span>
+      <div id="detail-skeleton" hidden>
+        <div class="skeleton-block" style="height:24px;width:60%;margin-bottom:16px;"></div>
+        <div class="skeleton-block" style="height:120px;margin-bottom:12px;"></div>
+        <div class="skeleton-block" style="height:80px;margin-bottom:12px;"></div>
+        <div class="skeleton-block" style="height:60px;"></div>
+      </div>
+
+      <div id="detail-content" hidden>
+        <div class="detail-header">
+          <h3 id="detail-title" class="detail-title"></h3>
+          <div class="detail-meta">
+            <span id="detail-severity" class="severity-pill"></span>
+            <span id="detail-count" class="count-badge"></span>
+            <span id="detail-time" class="detail-time"></span>
+          </div>
+        </div>
+
+        <div class="detail-sections" id="detail-sections">
+          <div class="detail-section" id="detail-error-section" hidden>
+            <h4 class="section-label">Error</h4>
+            <pre id="detail-error" class="code-block"></pre>
+          </div>
+
+          <div class="detail-section" id="detail-state-section" hidden>
+            <h4 class="section-label">State Snapshots</h4>
+            <div id="detail-state"></div>
+          </div>
+
+          <div class="detail-section" id="detail-nav-section" hidden>
+            <h4 class="section-label">Navigation History</h4>
+            <div id="detail-nav" class="nav-breadcrumbs"></div>
+          </div>
+
+          <div class="detail-section" id="detail-device-section" hidden>
+            <h4 class="section-label">Device Info</h4>
+            <div id="detail-device"></div>
+          </div>
+
+          <div class="detail-section" id="detail-screenshot-section" hidden>
+            <h4 class="section-label">Screenshot</h4>
+            <img id="detail-screenshot" class="screenshot" alt="Bug screenshot" />
+          </div>
+
+          <div class="detail-section">
+            <h4 class="section-label">Reports in Group</h4>
+            <div id="detail-reports-list"></div>
+          </div>
         </div>
       </div>
 
-      <div class="section-label">Breakdown</div>
-      <div class="mini-stats">
-        <div class="mini-stat">
-          <span class="mini-stat-label">Crashes</span>
-          <span class="mini-stat-value critical" id="stat-crash">--</span>
-        </div>
-        <div class="mini-stat">
-          <span class="mini-stat-label">Errors</span>
-          <span class="mini-stat-value warning" id="stat-error">--</span>
-        </div>
-        <div class="mini-stat">
-          <span class="mini-stat-label">Feedback</span>
-          <span class="mini-stat-value info" id="stat-feedback">--</span>
-        </div>
+      <div class="detail-actions" id="detail-actions" hidden>
+        <button class="btn btn-secondary" id="copy-md-btn">Copy as Markdown</button>
+        <button class="btn btn-primary" id="create-issue-btn">Create Issue</button>
       </div>
-
-      <div class="section-label" id="top-screens-section" hidden>Top Screens</div>
-      <div class="top-screens-list" id="top-screens"></div>
-    </aside>
+    </section>
   </div>
+  <div id="toast" class="toast" hidden></div>
+  <div id="clipboard-status" class="sr-only" aria-live="polite"></div>
 
   <style>
-    /* ===== Dashboard Grid ===== */
-    .dashboard {
+    .smart-feed {
       display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 32px;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      height: calc(100vh - 80px);
     }
-
-    /* ===== Feed Section ===== */
-    .feed-section {
+    .groups-panel {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
+      overflow-y: auto;
       min-width: 0;
     }
-    .feed-header {
+    .groups-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      padding-bottom: 8px;
+      z-index: 1;
     }
-    .feed-title {
+    .groups-title {
       font-family: var(--font-display);
       font-size: 24px;
       font-weight: 700;
       letter-spacing: -0.02em;
-    }
-    .feed-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
     .poll-status {
       font-size: 11px;
       color: var(--text-ghost);
       font-family: var(--font-mono);
     }
-
-    /* ===== Bug Cards ===== */
-    .bug-card {
-      display: grid;
-      grid-template-columns: 100px 1fr;
-      gap: 16px;
+    .skeleton-row {
+      height: 72px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      margin-bottom: 8px;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+    .skeleton-block {
+      background: var(--surface);
+      border-radius: 4px;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+    .group-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       padding: 16px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      transition: transform 75ms ease-out, border-color 150ms ease-out;
+      border-radius: 4px;
       cursor: pointer;
-      text-decoration: none;
-      color: inherit;
-      animation: slideInLeft 300ms ease-out both;
+      transition: border-color 150ms ease-out;
+      border-left: 2px solid transparent;
     }
-    .bug-card:hover {
-      transform: translateY(-1px);
-      border-color: var(--accent);
+    .group-row:hover { border-color: var(--accent); }
+    .group-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .group-row[aria-selected="true"] {
+      background: var(--surface-hover);
+      border-left: 2px solid var(--accent);
     }
-    .bug-card.new-report {
-      animation: highlight 2s ease;
-    }
-    @keyframes slideInLeft {
-      from { opacity: 0; transform: translateX(-12px); }
-      to { opacity: 1; transform: translateX(0); }
-    }
-    @keyframes highlight {
-      0% { border-color: var(--accent); background: var(--accent-muted); }
-      100% { border-color: var(--border); background: var(--surface); }
-    }
-
-    .bug-card-thumb {
-      width: 100px;
-      height: 68px;
-      background: var(--inset);
-      border-radius: 2px;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .bug-card-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .bug-card-thumb-content {
-      width: calc(100% - 8px);
-      height: calc(100% - 8px);
-      border: 1px solid var(--border);
-      border-radius: 2px;
-      display: flex;
-      flex-direction: column;
-      padding: 4px;
-      gap: 3px;
-      overflow: hidden;
-    }
-    .thumb-line {
-      height: 2px;
-      background: var(--text-ghost);
-      opacity: 0.3;
-      border-radius: 1px;
-    }
-    .thumb-line:nth-child(1) { width: 70%; }
-    .thumb-line:nth-child(2) { width: 50%; }
-    .thumb-line:nth-child(3) { width: 85%; }
-    .thumb-line:nth-child(4) { width: 40%; }
-    .thumb-line.accent { background: var(--red); opacity: 0.6; }
-
-    .bug-card-body {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 0;
-    }
-    .bug-card-title {
+    .group-row-body { flex: 1; min-width: 0; }
+    .group-row-title {
       font-family: var(--font-display);
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
       color: var(--text);
-      line-height: 1.3;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .bug-card-meta {
+    .group-row-meta {
       display: flex;
       align-items: center;
       gap: 8px;
+      margin-top: 4px;
       font-size: 12px;
       color: var(--text-ghost);
     }
-    .severity-dot {
-      width: 6px;
-      height: 6px;
+    .count-badge {
+      background: var(--accent-muted);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 2px 8px;
       border-radius: 9999px;
+      font-variant-numeric: tabular-nums;
       flex-shrink: 0;
     }
-    .severity-critical { background: var(--red); }
-    .severity-warning { background: var(--yellow); }
-    .severity-info { background: var(--info); }
-    .severity-feedback { background: var(--accent); }
-
-    .bug-card-screen {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .bug-card-time {
-      font-family: var(--font-mono);
-      font-size: 11px;
-    }
-    .bug-card-tags {
-      display: flex;
-      gap: 4px;
-      margin-top: 4px;
-    }
-    .tag {
+    .severity-pill {
       font-family: var(--font-mono);
       font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
       padding: 2px 6px;
       border-radius: 2px;
-      background: var(--inset);
-      color: var(--text-muted);
-      border: 1px solid var(--border-subtle);
     }
-
-    /* ===== Stats Panel ===== */
-    .stats-panel {
+    .severity-critical { color: var(--red); background: color-mix(in srgb, var(--red) 15%, transparent); }
+    .severity-high { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 15%, transparent); }
+    .severity-low { color: var(--text-ghost); background: var(--inset); }
+    .detail-panel {
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      overflow-y: auto;
+      max-height: calc(100vh - 80px);
+      position: relative;
     }
-    .hero-stat {
-      text-align: right;
-      padding: 24px 0;
-    }
-    .hero-stat-number {
-      font-family: var(--font-display);
-      font-size: 96px;
-      font-weight: 700;
-      color: var(--accent);
-      line-height: 1;
-      letter-spacing: -0.04em;
-      font-variant-numeric: tabular-nums;
-    }
-    .hero-stat-label {
-      font-family: var(--font-display);
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--text-ghost);
-      margin-top: 8px;
-    }
-
-    /* Sparkline */
-    .sparkline-container {
-      text-align: right;
-    }
-    .sparkline-svg {
-      width: 180px;
-      height: 40px;
-      display: inline-block;
-    }
-    .sparkline-meta {
+    .detail-empty {
       display: flex;
-      justify-content: space-between;
-      margin-top: 4px;
-    }
-    .sparkline-label, .sparkline-total {
-      font-size: 11px;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
       color: var(--text-ghost);
-      font-family: var(--font-mono);
+      font-size: 14px;
     }
-
-    /* Section label */
+    .detail-header { margin-bottom: 16px; }
+    .detail-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .detail-meta { display: flex; align-items: center; gap: 8px; }
+    .detail-time { font-size: 12px; color: var(--text-ghost); font-family: var(--font-mono); }
+    .detail-sections { flex: 1; overflow-y: auto; padding-bottom: 72px; }
+    .detail-section { margin-bottom: 16px; }
     .section-label {
       font-family: var(--font-display);
       font-size: 10px;
       font-weight: 600;
-      letter-spacing: 0.12em;
       text-transform: uppercase;
+      letter-spacing: 0.12em;
       color: var(--text-ghost);
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 8px;
     }
-
-    /* Mini stats */
-    .mini-stats {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+    .code-block {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--inset);
+      padding: 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
     }
-    .mini-stat {
+    .nav-breadcrumbs { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+    .nav-arrow { color: var(--text-ghost); margin: 0 6px; }
+    .device-row {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      padding: 8px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-    .mini-stat-label {
-      font-family: var(--font-body);
+      padding: 4px 0;
       font-size: 13px;
-      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
     }
-    .mini-stat-value {
+    .device-row:last-child { border-bottom: none; }
+    .device-label { color: var(--text-muted); }
+    .screenshot { max-width: 100%; border-radius: 4px; cursor: pointer; }
+    .state-entry { margin-bottom: 8px; }
+    .state-name { font-weight: 600; font-size: 13px; margin-bottom: 4px; cursor: pointer; }
+    .state-data {
       font-family: var(--font-mono);
-      font-size: 14px;
-      font-weight: 500;
-      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      background: var(--inset);
+      padding: 8px;
+      border-radius: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
     }
-    .mini-stat-value.critical { color: var(--red); }
-    .mini-stat-value.warning { color: var(--yellow); }
-    .mini-stat-value.info { color: var(--info); }
-
-    /* Top screens */
-    .top-screens-list {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    .screen-pill {
-      padding: 4px 10px;
-      border-radius: var(--radius);
-      font-size: 11px;
-      font-family: var(--font-mono);
-      background: var(--surface);
+    .report-mini {
+      display: block;
+      padding: 8px;
       border: 1px solid var(--border);
-      color: var(--text-muted);
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-size: 12px;
       cursor: pointer;
-      transition: border-color 150ms ease-out, color 150ms ease-out;
+      text-decoration: none;
+      color: inherit;
     }
-    .screen-pill:hover { border-color: var(--accent); color: var(--text); }
-    .screen-pill-count {
-      color: var(--accent);
-      margin-left: 4px;
-      font-family: var(--font-body);
+    .report-mini:hover { border-color: var(--accent); }
+    .detail-actions {
+      position: sticky;
+      bottom: 0;
+      background: var(--bg);
+      padding: 12px 0;
+      display: flex;
+      gap: 8px;
+      border-top: 1px solid var(--border);
     }
-    .screen-pill-active {
-      border-color: var(--accent);
-      color: var(--text);
-      background: var(--accent-muted);
+    #ungrouped-notice {
+      font-size: 12px;
+      color: var(--text-ghost);
+      padding: 8px 16px;
+      font-family: var(--font-mono);
     }
-    .screen-pill-clear {
-      color: var(--text-muted);
-      font-family: var(--font-body);
-      font-style: italic;
-    }
-
-    /* Empty state */
-    .empty-state {
-      text-align: center;
-      padding: 80px 20px;
-    }
+    .empty-state { text-align: center; padding: 80px 20px; }
     .empty-state h2 { margin-bottom: 12px; font-family: var(--font-display); }
     .empty-state pre {
       display: inline-block;
       text-align: left;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 4px;
       padding: 16px;
       margin-top: 16px;
       font-family: var(--font-mono);
       font-size: 13px;
     }
-
-    /* ===== Responsive ===== */
+    .error-state { text-align: center; padding: 40px 20px; color: var(--text-ghost); }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0,0,0,0); border: 0;
+    }
     @media (max-width: 1024px) {
-      .dashboard { grid-template-columns: 1fr; }
-      .stats-panel {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 16px;
-      }
-      .hero-stat { text-align: left; }
-      .hero-stat-number { font-size: 64px; }
-      .sparkline-container { text-align: left; }
-      .mini-stats { flex: 1; min-width: 200px; }
+      .smart-feed { grid-template-columns: 1.4fr 1fr; }
     }
     @media (max-width: 768px) {
-      .bug-card { grid-template-columns: 72px 1fr; }
-      .bug-card-thumb { width: 72px; height: 52px; }
-      .hero-stat-number { font-size: 48px; }
+      .smart-feed { grid-template-columns: 1fr; height: auto; }
+      .detail-panel { max-height: none; }
+      .detail-panel.mobile-active { display: flex; }
+      .detail-panel:not(.mobile-active) { display: none; }
+      .groups-panel.mobile-hidden { display: none; }
+      .mobile-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+      }
+    }
+    @media (min-width: 769px) {
+      .mobile-back { display: none; }
     }
   </style>
 
   <script>
-    const reportList = document.getElementById('report-list')!;
+    const groupsList = document.getElementById('groups-list')!;
+    const groupsSkeleton = document.getElementById('groups-skeleton')!;
     const emptyState = document.getElementById('empty-state')!;
-    const severityFilter = document.getElementById('severity-filter') as HTMLSelectElement;
-    const statusFilter = document.getElementById('status-filter') as HTMLSelectElement;
+    const errorState = document.getElementById('error-state')!;
+    const ungroupedNotice = document.getElementById('ungrouped-notice')!;
+    const detailPanel = document.getElementById('detail-panel')!;
+    const detailEmpty = document.getElementById('detail-empty')!;
+    const detailSkeleton = document.getElementById('detail-skeleton')!;
+    const detailContent = document.getElementById('detail-content')!;
+    const detailActions = document.getElementById('detail-actions')!;
     const pollStatus = document.getElementById('poll-status')!;
     const refreshBtn = document.getElementById('refresh-btn')!;
+    const retryBtn = document.getElementById('retry-btn')!;
+    const copyMdBtn = document.getElementById('copy-md-btn')!;
+    const createIssueBtn = document.getElementById('create-issue-btn')!;
+    const toastEl = document.getElementById('toast')!;
+    const clipboardStatus = document.getElementById('clipboard-status')!;
+    const groupsPanel = document.getElementById('groups-panel')!;
 
-    let reports: any[] = [];
+    let groups: any[] = [];
+    let selectedFingerprint: string | null = null;
+    let selectedGroupData: any = null;
     let pollTimer: ReturnType<typeof setInterval>;
 
-    const statTotal = document.getElementById('stat-total')!;
-    const statCrash = document.getElementById('stat-crash')!;
-    const statError = document.getElementById('stat-error')!;
-    const statFeedback = document.getElementById('stat-feedback')!;
-    const sparklinePath = document.getElementById('sparkline-path')!;
-    const sparklineTotal = document.getElementById('sparkline-total')!;
-    const topScreensSection = document.getElementById('top-screens-section')!;
-    const topScreensEl = document.getElementById('top-screens')!;
-
-    async function fetchAnalytics() {
-      try {
-        const res = await window.__bp.fetch('/v1/analytics');
-        if (!res.ok) return;
-        const data = await res.json();
-
-        const sev = data.severityBreakdown || {};
-        const total = (sev.crash || 0) + (sev.error || 0) + (sev.feedback || 0);
-
-        statTotal.textContent = String(total);
-        statCrash.textContent = String(sev.crash || 0);
-        statError.textContent = String(sev.error || 0);
-        statFeedback.textContent = String(sev.feedback || 0);
-
-        // SVG sparkline
-        const days: {date: string; count: number}[] = data.volumeByDay || [];
-        if (days.length > 0) {
-          const max = Math.max(...days.map((d: any) => d.count), 1);
-          const dayTotal = days.reduce((s: number, d: any) => s + d.count, 0);
-          sparklineTotal.textContent = `${dayTotal} reports`;
-
-          const points = days.map((d, i) => {
-            const x = days.length > 1 ? (i / (days.length - 1)) * 180 : 90;
-            const y = 40 - (d.count / max) * 36;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-          });
-          sparklinePath.setAttribute('d', 'M' + points.join(' L'));
-        }
-
-        // Top screens
-        const screens: {screen: string; count: number}[] = data.topScreens || [];
-        if (screens.length > 0) {
-          topScreensSection.hidden = false;
-          const fragment = document.createDocumentFragment();
-          for (const s of screens.slice(0, 5)) {
-            const pill = document.createElement('span');
-            pill.className = 'screen-pill';
-            pill.textContent = s.screen;
-
-            const count = document.createElement('span');
-            count.className = 'screen-pill-count';
-            count.textContent = String(s.count);
-            pill.appendChild(count);
-
-            pill.addEventListener('click', () => {
-              topScreensEl.querySelectorAll('.screen-pill').forEach((p: Element) => p.classList.remove('screen-pill-active'));
-              pill.classList.add('screen-pill-active');
-              const sev = severityFilter.value;
-              const stat = statusFilter.value;
-              const filtered = reports.filter((r: any) =>
-                r.screen === s.screen && (!sev || r.severity === sev) && (!stat || r.status === stat)
-              );
-              emptyState.hidden = true;
-              const frag = document.createDocumentFragment();
-              for (const r of filtered) {
-                frag.appendChild(createReportCard(r));
-              }
-              reportList.replaceChildren(frag);
-            });
-
-            fragment.appendChild(pill);
-          }
-
-          const clearPill = document.createElement('span');
-          clearPill.className = 'screen-pill screen-pill-clear';
-          clearPill.textContent = 'Show all';
-          clearPill.addEventListener('click', () => {
-            topScreensEl.querySelectorAll('.screen-pill').forEach((p: Element) => p.classList.remove('screen-pill-active'));
-            renderReports();
-          });
-          fragment.appendChild(clearPill);
-
-          topScreensEl.replaceChildren(fragment);
-        }
-      } catch {
-        // Silent fail — analytics is supplementary
-      }
+    function showToast(msg: string, type: string) {
+      toastEl.textContent = msg;
+      toastEl.className = `toast toast-${type}`;
+      toastEl.hidden = false;
+      setTimeout(() => { toastEl.hidden = true; }, 3000);
     }
 
     function timeAgo(dateStr: string): string {
@@ -515,132 +400,379 @@ npx @bugpulse/cli init</code></pre>
       return `${days}d ago`;
     }
 
-    const sevMap: Record<string, string> = { crash: 'critical', error: 'warning', feedback: 'feedback' };
+    function createGroupRow(g: any): HTMLDivElement {
+      const row = document.createElement('div');
+      row.className = 'group-row';
+      row.role = 'option';
+      row.tabIndex = 0;
+      row.setAttribute('aria-selected', 'false');
+      row.dataset.fingerprint = g.fingerprint;
 
-    function createReportCard(r: any): HTMLAnchorElement {
-      const card = document.createElement('a');
-      card.href = `/report?id=${r.id}`;
-      card.className = 'bug-card';
+      const badge = document.createElement('span');
+      badge.className = 'count-badge';
+      badge.textContent = String(g.count);
 
-      // Thumbnail
-      const thumb = document.createElement('div');
-      thumb.className = 'bug-card-thumb';
-      if (r.screenshot_id) {
-        const img = document.createElement('img');
-        img.src = `/v1/screenshots/${r.screenshot_id}`;
-        img.alt = 'Screenshot';
-        thumb.appendChild(img);
-      } else {
-        const content = document.createElement('div');
-        content.className = 'bug-card-thumb-content';
-        for (let i = 0; i < 4; i++) {
-          const line = document.createElement('div');
-          line.className = 'thumb-line' + (r.severity === 'crash' && i === 1 ? ' accent' : '');
-          content.appendChild(line);
-        }
-        thumb.appendChild(content);
-      }
-
-      // Body
       const body = document.createElement('div');
-      body.className = 'bug-card-body';
+      body.className = 'group-row-body';
 
-      const title = document.createElement('h3');
-      title.className = 'bug-card-title';
-      title.textContent = r.description || 'No description';
+      const title = document.createElement('div');
+      title.className = 'group-row-title';
+      title.textContent = g.title || 'No description';
 
       const meta = document.createElement('div');
-      meta.className = 'bug-card-meta';
+      meta.className = 'group-row-meta';
 
-      const dot = document.createElement('span');
-      dot.className = `severity-dot severity-${sevMap[r.severity] || 'info'}`;
-      const screen = document.createElement('span');
-      screen.className = 'bug-card-screen';
-      screen.textContent = r.screen || 'unknown';
+      const sev = document.createElement('span');
+      sev.className = `severity-pill severity-${g.severity}`;
+      sev.textContent = g.severity;
+      sev.setAttribute('aria-label', g.severity);
+
       const time = document.createElement('span');
-      time.className = 'bug-card-time';
-      time.textContent = timeAgo(r.created_at);
-      meta.append(dot, screen, time);
+      time.textContent = timeAgo(g.latest_at);
 
-      const tags = document.createElement('div');
-      tags.className = 'bug-card-tags';
-      const sevTag = document.createElement('span');
-      sevTag.className = 'tag';
-      sevTag.textContent = r.severity;
-      const statTag = document.createElement('span');
-      statTag.className = 'tag';
-      statTag.textContent = r.status;
-      tags.append(sevTag, statTag);
+      meta.append(sev, time);
+      body.append(title, meta);
+      row.append(badge, body);
 
-      body.append(title, meta, tags);
-      card.append(thumb, body);
-      return card;
+      row.addEventListener('click', () => selectGroup(g.fingerprint));
+      row.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') selectGroup(g.fingerprint);
+      });
+
+      return row;
     }
 
-    function renderReports() {
-      const sev = severityFilter.value;
-      const stat = statusFilter.value;
-      const filtered = reports.filter(r =>
-        (!sev || r.severity === sev) && (!stat || r.status === stat)
-      );
-
-      if (filtered.length === 0 && reports.length === 0) {
-        reportList.replaceChildren();
+    function renderGroups() {
+      groupsSkeleton.hidden = true;
+      if (groups.length === 0) {
+        groupsList.hidden = true;
         emptyState.hidden = false;
         return;
       }
-
       emptyState.hidden = true;
+      groupsList.hidden = false;
       const fragment = document.createDocumentFragment();
-      for (const r of filtered) {
-        fragment.appendChild(createReportCard(r));
+      for (const g of groups) fragment.appendChild(createGroupRow(g));
+      groupsList.replaceChildren(fragment);
+
+      if (selectedFingerprint) {
+        const active = groupsList.querySelector(`[data-fingerprint="${selectedFingerprint}"]`);
+        if (active) active.setAttribute('aria-selected', 'true');
       }
-      reportList.replaceChildren(fragment);
     }
 
-    async function fetchReports() {
+    async function selectGroup(fingerprint: string) {
+      selectedFingerprint = fingerprint;
+      const group = groups.find((g: any) => g.fingerprint === fingerprint);
+
+      groupsList.querySelectorAll('.group-row').forEach((r: Element) => {
+        r.setAttribute('aria-selected', r.getAttribute('data-fingerprint') === fingerprint ? 'true' : 'false');
+      });
+
+      if (window.innerWidth < 769) {
+        groupsPanel.classList.add('mobile-hidden');
+        detailPanel.classList.add('mobile-active');
+      }
+
+      detailEmpty.hidden = true;
+      detailContent.hidden = true;
+      detailActions.hidden = true;
+      detailSkeleton.hidden = false;
+
       try {
-        const res = await window.__bp.fetch('/v1/dashboard/reports?limit=50');
-        if (res.status === 401) {
-          window.location.href = '/login';
-          return;
+        const res = await window.__bp.fetch(`/v1/reports/groups/${fingerprint}`);
+        if (!res.ok) { showToast('Failed to load group', 'error'); return; }
+        const data = await res.json();
+        selectedGroupData = { group, reports: data.reports };
+        renderDetail(group, data.reports);
+      } catch {
+        showToast('Network error', 'error');
+      }
+    }
+
+    function renderDetail(group: any, reports: any[]) {
+      detailSkeleton.hidden = true;
+      detailContent.hidden = false;
+      detailActions.hidden = false;
+
+      document.getElementById('detail-title')!.textContent = group.title || 'No description';
+      const sevEl = document.getElementById('detail-severity')!;
+      sevEl.className = `severity-pill severity-${group.severity}`;
+      sevEl.textContent = group.severity;
+      document.getElementById('detail-count')!.textContent = `${group.count} reports`;
+      document.getElementById('detail-time')!.textContent = timeAgo(group.latest_at);
+
+      const latest = reports[0];
+      if (!latest) return;
+
+      let diagnostics = latest.diagnostics;
+      if (typeof diagnostics === 'string') {
+        try { diagnostics = JSON.parse(diagnostics); } catch { diagnostics = null; }
+      }
+
+      // Error
+      const errorSection = document.getElementById('detail-error-section')!;
+      if (diagnostics?.lastError) {
+        errorSection.hidden = false;
+        document.getElementById('detail-error')!.textContent =
+          `${diagnostics.lastError.message}\n\n${diagnostics.lastError.stack || ''}`;
+      } else {
+        errorSection.hidden = true;
+      }
+
+      // State snapshots
+      const stateSection = document.getElementById('detail-state-section')!;
+      const stateContainer = document.getElementById('detail-state')!;
+      stateContainer.replaceChildren();
+      if (diagnostics?.stateSnapshots?.length) {
+        stateSection.hidden = false;
+        for (const snap of diagnostics.stateSnapshots) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.className = 'state-name';
+          summary.textContent = snap.name + (snap.truncated ? ' (truncated)' : '');
+          details.appendChild(summary);
+          const pre = document.createElement('pre');
+          pre.className = 'state-data';
+          try { pre.textContent = JSON.stringify(JSON.parse(snap.state), null, 2); }
+          catch { pre.textContent = snap.state; }
+          details.appendChild(pre);
+          stateContainer.appendChild(details);
         }
-        if (!res.ok) return;
+      } else {
+        stateSection.hidden = false;
+        const p = document.createElement('p');
+        p.style.cssText = 'color:var(--text-ghost);font-size:13px;';
+        p.textContent = 'No state captured';
+        stateContainer.appendChild(p);
+      }
+
+      // Navigation
+      const navSection = document.getElementById('detail-nav-section')!;
+      const navContainer = document.getElementById('detail-nav')!;
+      navContainer.replaceChildren();
+      if (diagnostics?.navHistory?.length) {
+        navSection.hidden = false;
+        diagnostics.navHistory.forEach((e: any, i: number) => {
+          if (i > 0) {
+            const arrow = document.createElement('span');
+            arrow.className = 'nav-arrow';
+            arrow.textContent = '→';
+            navContainer.appendChild(arrow);
+          }
+          const span = document.createElement('span');
+          span.textContent = e.pathname;
+          navContainer.appendChild(span);
+        });
+      } else {
+        navSection.hidden = false;
+        const p = document.createElement('p');
+        p.style.cssText = 'color:var(--text-ghost);font-size:13px;';
+        p.textContent = 'No navigation data';
+        navContainer.appendChild(p);
+      }
+
+      // Device
+      const deviceSection = document.getElementById('detail-device-section')!;
+      const deviceContainer = document.getElementById('detail-device')!;
+      deviceContainer.replaceChildren();
+      const device = diagnostics?.device || (latest as any).device;
+      if (device) {
+        deviceSection.hidden = false;
+        for (const [label, value] of [['Model', device.model], ['OS', device.os], ['App Version', device.appVersion], ['Screen Size', device.screenSize], ['Locale', device.locale]] as [string, string][]) {
+          if (!value) continue;
+          const row = document.createElement('div');
+          row.className = 'device-row';
+          const l = document.createElement('span');
+          l.className = 'device-label';
+          l.textContent = label;
+          const v = document.createElement('span');
+          v.textContent = value;
+          row.append(l, v);
+          deviceContainer.appendChild(row);
+        }
+      } else {
+        deviceSection.hidden = true;
+      }
+
+      // Screenshot
+      const ssSection = document.getElementById('detail-screenshot-section')!;
+      if (latest.screenshot_id) {
+        ssSection.hidden = false;
+        (document.getElementById('detail-screenshot') as HTMLImageElement).src = `/v1/screenshots/${latest.screenshot_id}`;
+      } else {
+        ssSection.hidden = true;
+      }
+
+      // Reports in group
+      const reportsList = document.getElementById('detail-reports-list')!;
+      reportsList.replaceChildren();
+      for (const r of reports) {
+        const el = document.createElement('a');
+        el.href = `/report?id=${r.id}`;
+        el.className = 'report-mini';
+        const screen = document.createElement('span');
+        screen.style.color = 'var(--text-muted)';
+        screen.textContent = r.screen || 'unknown';
+        const sep = document.createTextNode(' · ' + timeAgo(r.created_at));
+        el.append(screen, sep);
+        reportsList.appendChild(el);
+      }
+
+      // Mobile back button
+      let backBtn = detailContent.querySelector('.mobile-back');
+      if (!backBtn) {
+        backBtn = document.createElement('button');
+        backBtn.className = 'mobile-back';
+        backBtn.textContent = '← Back to groups';
+        (backBtn as HTMLElement).addEventListener('click', () => {
+          groupsPanel.classList.remove('mobile-hidden');
+          detailPanel.classList.remove('mobile-active');
+          selectedFingerprint = null;
+        });
+        detailContent.prepend(backBtn);
+      }
+    }
+
+    async function fetchGroups() {
+      try {
+        const res = await window.__bp.fetch('/v1/reports/groups?per_page=50');
+        if (res.status === 401) { window.location.href = '/login'; return; }
+        if (!res.ok) throw new Error('fetch failed');
 
         const data = await res.json();
-        const prevCount = reports.length;
-        reports = data.reports || [];
-        renderReports();
+        groups = data.groups || [];
+        renderGroups();
 
-        if (prevCount > 0 && reports.length > prevCount) {
-          const newCards = reportList.querySelectorAll('.bug-card');
-          for (let i = 0; i < reports.length - prevCount; i++) {
-            newCards[i]?.classList.add('new-report');
-          }
+        if (data.ungrouped_count > 0) {
+          ungroupedNotice.hidden = false;
+          ungroupedNotice.textContent = `+ ${data.ungrouped_count} ungrouped report${data.ungrouped_count > 1 ? 's' : ''}`;
+        } else {
+          ungroupedNotice.hidden = true;
         }
 
+        errorState.hidden = true;
         pollStatus.textContent = `Updated ${new Date().toLocaleTimeString()} · Auto-refreshing every 15s`;
       } catch {
+        groupsSkeleton.hidden = true;
+        errorState.hidden = false;
         pollStatus.textContent = 'Connection error · Retrying...';
       }
     }
 
-    fetchReports();
-    fetchAnalytics();
-    pollTimer = setInterval(() => { fetchReports(); fetchAnalytics(); }, 15000);
+    // Copy as Markdown
+    copyMdBtn.addEventListener('click', async () => {
+      if (!selectedGroupData) return;
+      const { group, reports } = selectedGroupData;
+      const latest = reports[0];
+      if (!latest) return;
+
+      let diagnostics = latest.diagnostics;
+      if (typeof diagnostics === 'string') {
+        try { diagnostics = JSON.parse(diagnostics); } catch { diagnostics = null; }
+      }
+
+      const stateStr = diagnostics?.stateSnapshots?.map((s: any) => {
+        try { return `**${s.name}**\n\`\`\`json\n${JSON.stringify(JSON.parse(s.state), null, 2).slice(0, 2000)}\n\`\`\``; }
+        catch { return `**${s.name}**\n${s.state}`; }
+      }).join('\n\n') || 'No state captured';
+
+      const navStr = diagnostics?.navHistory?.map((e: any) => e.pathname).join(' → ') || 'No navigation data';
+      const device = diagnostics?.device || {};
+
+      const md = [
+        `## Bug: ${group.title || 'No description'}`,
+        `**Occurrences:** ${group.count} | **Severity:** ${group.severity} | **Latest:** ${timeAgo(group.latest_at)}`,
+        `**Device:** ${device.model || 'unknown'} · ${device.os || 'unknown'} · App v${device.appVersion || 'unknown'}`,
+        '',
+        '---',
+        '**State Snapshot**',
+        stateStr,
+        '',
+        '---',
+        '**Navigation History**',
+        navStr,
+        '',
+        '---',
+        `**Screenshot:** ${latest.screenshot_id ? `${window.location.origin}/v1/screenshots/${latest.screenshot_id}` : 'not captured'}`,
+      ].join('\n');
+
+      try {
+        await navigator.clipboard.writeText(md);
+        showToast('Copied to clipboard', 'success');
+        clipboardStatus.textContent = 'Copied to clipboard';
+      } catch {
+        showToast('Failed to copy', 'error');
+      }
+    });
+
+    // Create Issue
+    createIssueBtn.addEventListener('click', async () => {
+      if (!selectedGroupData?.reports?.[0]) return;
+      const reportId = selectedGroupData.reports[0].id;
+
+      createIssueBtn.disabled = true;
+      createIssueBtn.textContent = 'Creating...';
+
+      try {
+        const res = await window.__bp.fetch('/v1/dashboard/create-issue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_id: reportId }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.message || data.error || 'Failed to create issue', 'error');
+          return;
+        }
+
+        if (data.issues?.length > 0) {
+          const urls = data.issues.map((i: any) => i.url).join(', ');
+          showToast(`Issue created: ${urls}`, 'success');
+        } else {
+          showToast('No issues created', 'error');
+        }
+      } catch {
+        showToast('Network error', 'error');
+      } finally {
+        createIssueBtn.disabled = false;
+        createIssueBtn.textContent = 'Create Issue';
+      }
+    });
+
+    // Keyboard navigation
+    groupsList.addEventListener('keydown', (e: KeyboardEvent) => {
+      const rows = Array.from(groupsList.querySelectorAll('.group-row')) as HTMLElement[];
+      const idx = rows.findIndex((r) => r === document.activeElement);
+      if (e.key === 'ArrowDown' && idx < rows.length - 1) {
+        e.preventDefault();
+        rows[idx + 1]!.focus();
+      } else if (e.key === 'ArrowUp' && idx > 0) {
+        e.preventDefault();
+        rows[idx - 1]!.focus();
+      } else if (e.key === 'Escape') {
+        selectedFingerprint = null;
+        rows.forEach((r) => r.setAttribute('aria-selected', 'false'));
+        detailContent.hidden = true;
+        detailActions.hidden = true;
+        detailEmpty.hidden = false;
+      }
+    });
+
+    fetchGroups();
+    pollTimer = setInterval(fetchGroups, 15000);
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         clearInterval(pollTimer);
       } else {
-        fetchReports();
-        fetchAnalytics();
-        pollTimer = setInterval(() => { fetchReports(); fetchAnalytics(); }, 15000);
+        fetchGroups();
+        pollTimer = setInterval(fetchGroups, 15000);
       }
     });
 
-    severityFilter.addEventListener('change', renderReports);
-    statusFilter.addEventListener('change', renderReports);
-    refreshBtn.addEventListener('click', () => { fetchReports(); fetchAnalytics(); });
+    refreshBtn.addEventListener('click', fetchGroups);
+    retryBtn.addEventListener('click', fetchGroups);
   </script>
 </DashboardLayout>

@@ -165,15 +165,20 @@ class MockD1Database {
       return [{ count: 1 }];
     }
 
-    // INSERT INTO reports
+    // INSERT INTO reports (with optional fingerprint column)
     if (sqlLower.includes('insert') && sqlLower.includes('reports') && !sqlLower.includes('report_hashes') && !sqlLower.includes('report_status') && !sqlLower.includes('failed_reports')) {
-      const [id, userId, hash, screen, severity, description, diagnostics, screenshotId, status, createdAt] = params;
-      this.reports.set(id, { id, user_id: userId, hash, screen, severity, description, diagnostics, screenshot_id: screenshotId, status: status ?? 'new', created_at: createdAt ?? new Date().toISOString() });
-      return [this.reports.get(id)];
+      if (sqlLower.includes('fingerprint')) {
+        const [id, userId, hash, screen, severity, description, diagnostics, screenshotId, status, fingerprint, createdAt] = params;
+        this.reports.set(id, { id, user_id: userId, hash, screen, severity, description, diagnostics, screenshot_id: screenshotId, status: status ?? 'new', fingerprint: fingerprint ?? null, created_at: createdAt ?? new Date().toISOString() });
+      } else {
+        const [id, userId, hash, screen, severity, description, diagnostics, screenshotId, status, createdAt] = params;
+        this.reports.set(id, { id, user_id: userId, hash, screen, severity, description, diagnostics, screenshot_id: screenshotId, status: status ?? 'new', fingerprint: null, created_at: createdAt ?? new Date().toISOString() });
+      }
+      return [this.reports.get(params[0])];
     }
 
-    // SELECT from reports (dashboard list — no diagnostics)
-    if (sqlLower.includes('select') && sqlLower.includes('from reports') && !sqlLower.includes('select *') && sqlLower.includes('order by')) {
+    // SELECT from reports (dashboard list — no diagnostics, not GROUP BY)
+    if (sqlLower.includes('select') && sqlLower.includes('from reports') && !sqlLower.includes('select *') && sqlLower.includes('order by') && !sqlLower.includes('group by')) {
       const userId = params[0];
       let results = [...this.reports.values()].filter(r => r.user_id === userId);
       // Apply screen filter if present
@@ -184,8 +189,8 @@ class MockD1Database {
       return results.slice(offset, offset + limit);
     }
 
-    // SELECT * FROM reports WHERE id = ? AND user_id = ?
-    if (sqlLower.includes('select *') && sqlLower.includes('from reports') && sqlLower.includes('id = ?')) {
+    // SELECT * FROM reports WHERE id = ? AND user_id = ? (single report by ID)
+    if (sqlLower.includes('select *') && sqlLower.includes('from reports') && sqlLower.includes('id = ?') && !sqlLower.includes('fingerprint')) {
       const report = this.reports.get(params[0]);
       return report && report.user_id === params[1] ? [report] : [];
     }
@@ -200,7 +205,65 @@ class MockD1Database {
       return 0 as any;
     }
 
-    // COUNT(*) FROM reports
+    // GROUP BY fingerprint (groups endpoint)
+    if (sqlLower.includes('group by') && sqlLower.includes('fingerprint')) {
+      const userId = params[0];
+      const reports = [...this.reports.values()].filter(r => r.user_id === userId && r.fingerprint != null);
+      const grouped = new Map<string, any[]>();
+      for (const r of reports) {
+        const arr = grouped.get(r.fingerprint) || [];
+        arr.push(r);
+        grouped.set(r.fingerprint, arr);
+      }
+      const sevScore = (s: string) => s === 'crash' ? 3 : s === 'error' ? 2 : 1;
+      const results = [...grouped.entries()].map(([fp, reps]) => ({
+        fingerprint: fp,
+        title: reps[0].description,
+        count: reps.length,
+        max_sev: Math.max(...reps.map((r: any) => sevScore(r.severity))),
+        latest_at: reps.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0].created_at,
+        first_at: reps.sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0].created_at,
+      }));
+      results.sort((a, b) => b.count - a.count);
+      const limit = params[1] ?? 50;
+      const offset = params[2] ?? 0;
+      return results.slice(offset, offset + limit);
+    }
+
+    // COUNT(*) FROM reports WHERE fingerprint IS NULL
+    if (sqlLower.includes('count(*)') && sqlLower.includes('from reports') && sqlLower.includes('fingerprint is null')) {
+      const userId = params[0];
+      const cnt = [...this.reports.values()].filter(r => r.user_id === userId && r.fingerprint == null).length;
+      return [{ cnt }];
+    }
+
+    // COUNT(DISTINCT fingerprint) FROM reports
+    if (sqlLower.includes('count(distinct fingerprint)') && sqlLower.includes('from reports')) {
+      const userId = params[0];
+      const fps = new Set([...this.reports.values()].filter(r => r.user_id === userId && r.fingerprint != null).map(r => r.fingerprint));
+      return [{ cnt: fps.size }];
+    }
+
+    // SELECT * FROM reports WHERE user_id = ? AND fingerprint = ?
+    if (sqlLower.includes('select *') && sqlLower.includes('from reports') && sqlLower.includes('fingerprint = ?')) {
+      const userId = params[0];
+      const fingerprint = params[1];
+      let results = [...this.reports.values()].filter(r => r.user_id === userId && r.fingerprint === fingerprint);
+      results.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const limit = params[2] ?? 20;
+      const offset = params[3] ?? 0;
+      return results.slice(offset, offset + limit);
+    }
+
+    // COUNT(*) FROM reports WHERE fingerprint = ?
+    if (sqlLower.includes('count(*)') && sqlLower.includes('from reports') && sqlLower.includes('fingerprint = ?')) {
+      const userId = params[0];
+      const fingerprint = params[1];
+      const cnt = [...this.reports.values()].filter(r => r.user_id === userId && r.fingerprint === fingerprint).length;
+      return [{ cnt }];
+    }
+
+    // COUNT(*) FROM reports (total)
     if (sqlLower.includes('count(*)') && sqlLower.includes('from reports')) {
       return [{ count: this.reports.size }];
     }
@@ -339,6 +402,7 @@ export function createMockEnv(): Env {
     STRIPE_STARTER_PRICE_ID: 'price_starter_test',
     STRIPE_PRO_PRICE_ID: 'price_pro_test',
     RESEND_API_KEY: 'test_resend_key',
+    APP_URL: 'https://bugpulse-dashboard.pages.dev',
     ALLOWED_ORIGINS: '*',
   };
 }

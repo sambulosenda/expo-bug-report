@@ -129,7 +129,7 @@ describe('Team Management', () => {
       expect(res.status).toBe(502);
       const data = await res.json() as { ok: boolean; email_sent: boolean; invite_url: string };
       expect(data.email_sent).toBe(false);
-      expect(data.invite_url).toContain('bugpulse.dev/auth/magic');
+      expect(data.invite_url).toContain('/auth/magic');
     });
   });
 

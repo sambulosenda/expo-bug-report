@@ -8,6 +8,7 @@ import { createLinearIssue, addLinearComment } from './integrations/linear';
 import { createGithubIssue, addGithubComment } from './integrations/github';
 import { createJiraIssue, addJiraComment } from './integrations/jira';
 import { trackSpike, cleanupSpikeWindows } from './spike';
+import { computeFingerprint } from './fingerprint';
 import { checkAndSendOnboarding } from './onboarding';
 import { handleStripeWebhook, expireGracePeriods } from './stripe';
 import type { Env, IncomingReport, IntegrationRow, IssueResult, QueueMessage, User } from './types';
@@ -158,9 +159,10 @@ app.post('/v1/reports', requireAuth, async (c) => {
   const severity = report.diagnostics?.lastError ? 'crash'
     : report.description?.toLowerCase().match(/error|fail|broke|crash/) ? 'error'
     : 'feedback';
+  const fingerprint = await computeFingerprint(report.diagnostics, report.description);
   try {
     await c.env.DB.prepare(
-      'INSERT INTO reports (id, user_id, hash, screen, severity, description, diagnostics, screenshot_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO reports (id, user_id, hash, screen, severity, description, diagnostics, screenshot_id, status, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).bind(
       reportId,
       user.id,
@@ -171,6 +173,7 @@ app.post('/v1/reports', requireAuth, async (c) => {
       report.diagnostics ? JSON.stringify(report.diagnostics) : null,
       report.screenshotId ?? null,
       'new',
+      fingerprint,
       new Date().toISOString(),
     ).run();
   } catch (err) {
@@ -928,6 +931,150 @@ app.patch('/v1/reports/:id', requireDashboardAuth, async (c) => {
   }
 
   return c.json({ ok: true, status: body.status });
+});
+
+// --- Smart Feed: grouped reports ---
+app.get('/v1/reports/groups', requireDashboardAuth, async (c) => {
+  const user = c.get('user');
+  const page = parseInt(c.req.query('page') ?? '1', 10);
+  const perPage = Math.min(parseInt(c.req.query('per_page') ?? '50', 10), 50);
+  const sort = c.req.query('sort') === 'latest' ? 'latest_at' : 'count';
+  const offset = (page - 1) * perPage;
+
+  try {
+    const groupsQuery = await c.env.DB.prepare(`
+      SELECT fingerprint,
+             MIN(description) as title,
+             COUNT(*) as count,
+             MAX(CASE WHEN severity = 'crash' THEN 3 WHEN severity = 'error' THEN 2 ELSE 1 END) as max_sev,
+             MAX(created_at) as latest_at,
+             MIN(created_at) as first_at
+      FROM reports
+      WHERE user_id = ? AND fingerprint IS NOT NULL
+      GROUP BY fingerprint
+      ORDER BY ${sort === 'latest_at' ? 'latest_at DESC' : 'count DESC'}
+      LIMIT ? OFFSET ?
+    `).bind(user.id, perPage, offset).all<{
+      fingerprint: string; title: string; count: number; max_sev: number;
+      latest_at: string; first_at: string;
+    }>();
+
+    const ungroupedRow = await c.env.DB.prepare(
+      'SELECT COUNT(*) as cnt FROM reports WHERE user_id = ? AND fingerprint IS NULL',
+    ).bind(user.id).first<{ cnt: number }>();
+
+    const totalRow = await c.env.DB.prepare(
+      'SELECT COUNT(DISTINCT fingerprint) as cnt FROM reports WHERE user_id = ? AND fingerprint IS NOT NULL',
+    ).bind(user.id).first<{ cnt: number }>();
+
+    const sevMap: Record<number, string> = { 3: 'critical', 2: 'high', 1: 'low' };
+    const groups = (groupsQuery.results ?? []).map((g) => ({
+      fingerprint: g.fingerprint,
+      title: g.title ?? 'No description',
+      count: g.count,
+      severity: sevMap[g.max_sev] ?? 'low',
+      latest_at: g.latest_at,
+      first_at: g.first_at,
+    }));
+
+    return c.json({
+      groups,
+      ungrouped_count: ungroupedRow?.cnt ?? 0,
+      page,
+      per_page: perPage,
+      total_groups: totalRow?.cnt ?? 0,
+    });
+  } catch (err) {
+    console.error('[BugPulse Proxy] Groups query failed:', err);
+    return c.json({ error: 'internal_error' }, 500);
+  }
+});
+
+app.get('/v1/reports/groups/:fingerprint', requireDashboardAuth, async (c) => {
+  const user = c.get('user');
+  const fingerprint = c.req.param('fingerprint');
+  const page = parseInt(c.req.query('page') ?? '1', 10);
+  const perPage = Math.min(parseInt(c.req.query('per_page') ?? '20', 10), 20);
+  const offset = (page - 1) * perPage;
+
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM reports WHERE user_id = ? AND fingerprint = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+  ).bind(user.id, fingerprint, perPage, offset).all();
+
+  const totalRow = await c.env.DB.prepare(
+    'SELECT COUNT(*) as cnt FROM reports WHERE user_id = ? AND fingerprint = ?',
+  ).bind(user.id, fingerprint).first<{ cnt: number }>();
+
+  if ((rows.results ?? []).length === 0) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  return c.json({
+    reports: rows.results ?? [],
+    page,
+    per_page: perPage,
+    total: totalRow?.cnt ?? 0,
+  });
+});
+
+app.post('/v1/dashboard/create-issue', requireDashboardAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json<{ report_id: string }>();
+
+  if (!body.report_id) {
+    return c.json({ error: 'validation_error', details: ['report_id required'] }, 422);
+  }
+
+  const report = await c.env.DB.prepare(
+    'SELECT * FROM reports WHERE id = ? AND user_id = ?',
+  ).bind(body.report_id, user.id).first();
+
+  if (!report) return c.json({ error: 'not_found' }, 404);
+
+  const integrations = await c.env.DB.prepare(
+    'SELECT * FROM integrations WHERE user_id = ? AND enabled = 1',
+  ).bind(user.id).all<IntegrationRow>();
+
+  if ((integrations.results ?? []).length === 0) {
+    return c.json({ error: 'no_integrations', message: 'No integrations configured. Run: npx @bugpulse/cli add-integration' }, 422);
+  }
+
+  let diagnostics = report.diagnostics as string | null;
+  let parsedDiagnostics;
+  try { parsedDiagnostics = diagnostics ? JSON.parse(diagnostics) : undefined; } catch { parsedDiagnostics = undefined; }
+
+  const incomingReport: IncomingReport = {
+    screenshot: null,
+    annotatedScreenshot: null,
+    screenshotBase64: null,
+    screenshotId: (report.screenshot_id as string) ?? null,
+    description: (report.description as string) ?? '',
+    device: parsedDiagnostics?.device ?? { model: 'unknown', os: 'unknown', appVersion: 'unknown', screenSize: 'unknown', locale: 'unknown', installationId: 'unknown', expoConfig: null },
+    screen: (report.screen as string) ?? 'unknown',
+    timestamp: (report.created_at as string) ?? new Date().toISOString(),
+    metadata: {},
+    diagnostics: parsedDiagnostics,
+  };
+
+  const labels = deriveLabels(incomingReport);
+  const screenshotUrl = report.screenshot_id ? await getScreenshotUrl(c.env, report.screenshot_id as string) : null;
+  const title = `[BugPulse] ${incomingReport.description?.slice(0, 80) || incomingReport.screen}`;
+
+  const results = await Promise.allSettled(
+    (integrations.results ?? []).map(async (integration) => {
+      const config = JSON.parse(await decrypt(integration.config, c.env.ENCRYPTION_KEY)) as Record<string, string>;
+      return createIssue(integration.type, incomingReport, config, labels, screenshotUrl, title);
+    }),
+  );
+
+  const issues: IssueResult[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      issues.push(result.value);
+    }
+  }
+
+  return c.json({ success: true, issues });
 });
 
 // --- Public stats (unauthenticated, rate limited, cached) ---
