@@ -65,8 +65,9 @@
 **Added:** 2026-03-29 via /plan-ceo-review (outside voice finding)
 
 ## Console log capture
-**Status:** TODO
+**Status:** DONE
 **Priority:** P2
+**Completed:** v1.1.1.0 (2026-03-31)
 **What:** Patch console.warn and console.error to capture last 20 entries in a ring buffer, included in bug report diagnostics.
 **Why:** Console breadcrumbs show what the app was "thinking" leading up to a bug. Completes the debugging context alongside state + nav.
 **Context:** Monkey-patching console in RN interacts with LogBox (which hooks console.error). Needs dedicated testing to avoid suppressing/duplicating warnings. Sentry also patches console; coexistence must be verified. Timestamps required for correlation with nav/state timeline.
