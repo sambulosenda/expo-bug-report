@@ -71,7 +71,7 @@ function DiagnosticsSummary({ colorScheme }: { colorScheme?: ColorSchemeName }) 
   if (parts.length === 0) return null;
 
   return (
-    <View style={{ backgroundColor: colors.surface, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+    <View style={{ backgroundColor: colors.surface, borderRadius: 4, padding: 10, marginBottom: 12 }}>
       <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>
         Including: {parts.join(', ')}, device info
         {'\n'}Just describe what you saw.
@@ -324,7 +324,7 @@ export function BugReportModal({
               <View
                 style={{
                   backgroundColor: colors.error + '18',
-                  borderRadius: 8,
+                  borderRadius: 4,
                   padding: 12,
                   marginBottom: 12,
                 }}
@@ -340,7 +340,7 @@ export function BugReportModal({
               <View
                 style={{
                   backgroundColor: colors.surface,
-                  borderRadius: 8,
+                  borderRadius: 4,
                   padding: 12,
                   marginBottom: 16,
                 }}
@@ -359,7 +359,7 @@ export function BugReportModal({
                   style={{
                     width: 120,
                     height: 180,
-                    borderRadius: 8,
+                    borderRadius: 4,
                     borderWidth: 1,
                     borderColor: colors.border,
                   }}
@@ -387,7 +387,7 @@ export function BugReportModal({
               style={{
                 borderWidth: 1,
                 borderColor: colors.inputBorder,
-                borderRadius: 12,
+                borderRadius: 4,
                 padding: 16,
                 fontSize: 16,
                 color: colors.text,
@@ -404,7 +404,7 @@ export function BugReportModal({
               disabled={isSubmitting}
               style={{
                 backgroundColor: isSubmitting ? colors.disabled : colors.primary,
-                borderRadius: 12,
+                borderRadius: 4,
                 paddingVertical: 16,
                 alignItems: 'center',
               }}
@@ -412,10 +412,10 @@ export function BugReportModal({
               accessibilityLabel="Submit bug report"
             >
               {isSubmitting ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.background} />
               ) : (
                 <Text
-                  style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}
+                  style={{ fontSize: 16, fontWeight: '600', color: colors.background }}
                 >
                   Submit
                 </Text>
@@ -456,7 +456,7 @@ export function BugReportModal({
               onPress={handleClose}
               style={{
                 backgroundColor: colors.primary,
-                borderRadius: 12,
+                borderRadius: 4,
                 paddingVertical: 16,
                 paddingHorizontal: 40,
                 marginTop: 32,
@@ -465,7 +465,7 @@ export function BugReportModal({
               accessibilityLabel="Done"
             >
               <Text
-                style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}
+                style={{ fontSize: 16, fontWeight: '600', color: colors.background }}
               >
                 Done
               </Text>
@@ -507,7 +507,7 @@ export function BugReportModal({
                 disabled={isSubmitting}
                 style={{
                   backgroundColor: colors.primary,
-                  borderRadius: 12,
+                  borderRadius: 4,
                   paddingVertical: 16,
                   paddingHorizontal: 40,
                   marginBottom: 12,
@@ -516,10 +516,10 @@ export function BugReportModal({
                 accessibilityLabel="Retry sending"
               >
                 {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.background} />
                 ) : (
                   <Text
-                    style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}
+                    style={{ fontSize: 16, fontWeight: '600', color: colors.background }}
                   >
                     Retry
                   </Text>
@@ -533,7 +533,7 @@ export function BugReportModal({
                 style={{
                   borderWidth: 1,
                   borderColor: colors.primary,
-                  borderRadius: 12,
+                  borderRadius: 4,
                   paddingVertical: 16,
                   paddingHorizontal: 40,
                 }}

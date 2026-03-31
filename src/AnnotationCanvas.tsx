@@ -23,7 +23,7 @@ interface PathData {
   color: string;
 }
 
-const PEN_COLORS = ['#FF3B30', '#007AFF', '#FFCC00', '#FFFFFF'];
+const PEN_COLORS = ['#D94B4B', '#E86B2E', '#E8A02E', '#E8E0D4'];
 
 export function AnnotationCanvas({
   screenshotUri,

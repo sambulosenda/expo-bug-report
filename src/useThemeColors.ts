@@ -15,31 +15,31 @@ export interface ThemeColors {
 }
 
 const lightColors: ThemeColors = {
-  background: '#fff',
-  surface: '#F2F2F7',
-  border: '#E5E5EA',
-  text: '#000',
-  textSecondary: '#8E8E93',
-  textTertiary: '#C7C7CC',
-  inputBackground: '#F2F2F7',
-  inputBorder: '#E5E5EA',
-  primary: '#007AFF',
-  error: '#FF3B30',
-  disabled: '#C7C7CC',
+  background: '#F5F0EA',
+  surface: '#FFFFFF',
+  border: '#C4BFB8',
+  text: '#1A1814',
+  textSecondary: '#6B6358',
+  textTertiary: '#9B9183',
+  inputBackground: '#F0EBE4',
+  inputBorder: '#C4BFB8',
+  primary: '#E86B2E',
+  error: '#D94B4B',
+  disabled: '#9B9183',
 };
 
 const darkColors: ThemeColors = {
-  background: '#1C1C1E',
-  surface: '#2C2C2E',
-  border: '#38383A',
-  text: '#fff',
-  textSecondary: '#8E8E93',
-  textTertiary: '#48484A',
-  inputBackground: '#2C2C2E',
-  inputBorder: '#38383A',
-  primary: '#0A84FF',
-  error: '#FF453A',
-  disabled: '#48484A',
+  background: '#1A1814',
+  surface: '#242019',
+  border: '#3D372F',
+  text: '#E8E0D4',
+  textSecondary: '#9B9183',
+  textTertiary: '#5C554B',
+  inputBackground: '#141210',
+  inputBorder: '#3D372F',
+  primary: '#E86B2E',
+  error: '#D94B4B',
+  disabled: '#5C554B',
 };
 
 export function useThemeColors(override?: ColorSchemeName): ThemeColors {
