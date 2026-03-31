@@ -5,7 +5,7 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="Login">
   <div class="login-container">
     <div class="login-card card">
-      <h1>BugPulse</h1>
+      <h1><a href="/" class="logo-link">BugPulse</a></h1>
       <p class="subtitle">Enter your API key to access the dashboard</p>
 
       <form id="login-form">
@@ -46,6 +46,13 @@ import Layout from '../layouts/Layout.astro';
       font-weight: 700;
       letter-spacing: -0.02em;
       margin-bottom: 8px;
+    }
+    .logo-link {
+      color: var(--text);
+      text-decoration: none;
+    }
+    .logo-link:hover {
+      color: var(--accent);
     }
     .subtitle {
       color: var(--text-muted);
